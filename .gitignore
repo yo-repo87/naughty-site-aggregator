@@ -1,0 +1,11 @@
+# secrets / local-only
+gitkey
+.access_password
+.tunnel-backup-*.json
+.env
+launch.sh
+
+# python
+.venv/
+__pycache__/
+*.pyc

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Aggregator</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div id="agegate" class="agegate" hidden>
+  <div class="agegate-box">
+    <h1>Adults only</h1>
+    <p>This page searches adult video sites. Continue only if you are 18+ (or the age of majority where you live).</p>
+    <div class="row">
+      <button id="age-yes" class="primary">I'm 18 or older</button>
+      <a class="btn" href="https://www.google.com">Leave</a>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="brand">Aggregator</div>
+  <form id="search-form" class="search">
+    <input id="q" type="search" placeholder="Title / keywords" autocomplete="off">
+    <input id="actor" type="search" placeholder="Performer" autocomplete="off">
+    <input id="channel" type="search" placeholder="Channel / studio" autocomplete="off">
+    <input id="tags" type="search" placeholder="Tags (comma separated)" autocomplete="off">
+    <button class="primary" type="submit">Search</button>
+  </form>
+  <button id="toggle-filters" class="btn filters-btn" type="button">Filters</button>
+</header>
+
+<div class="layout">
+  <aside id="filters" class="filters">
+    <section>
+      <h2>Length</h2>
+      <div class="range-label"><span id="len-min-label">0:00</span><span>–</span><span id="len-max-label">Any</span></div>
+      <div class="dual-range">
+        <div class="track"><div id="range-fill" class="fill"></div></div>
+        <input id="len-min" type="range" min="0" max="180" step="1" value="0" aria-label="Minimum length (minutes)">
+        <input id="len-max" type="range" min="0" max="180" step="1" value="180" aria-label="Maximum length (minutes)">
+      </div>
+      <div class="presets">
+        <button type="button" data-preset="0,180">Any</button>
+        <button type="button" data-preset="5,180">No shorts</button>
+        <button type="button" data-preset="10,30">10–30m</button>
+        <button type="button" data-preset="30,180">30m+</button>
+        <button type="button" data-preset="60,180">1h+</button>
+      </div>
+      <p class="hint">Pornhub reports exact lengths. XVideos and SpankBang round to the minute (marked ~).</p>
+    </section>
+
+    <section>
+      <h2>Exclude title words</h2>
+      <textarea id="exclude" rows="3" spellcheck="false"></textarea>
+      <p class="hint">Comma separated. Hides any video whose title contains one of these.</p>
+      <label class="check"><input id="strict" type="checkbox"> Title must contain every search word</label>
+    </section>
+
+    <section>
+      <h2>Channels <span id="channel-active" class="clear-link" hidden>clear</span></h2>
+      <input id="channel-find" type="search" placeholder="Filter channels…" autocomplete="off">
+      <div id="channel-list" class="channel-list"><p class="hint">Channels in your results appear here.</p></div>
+      <p class="hint">Tick to show only those channels. ✕ hides a channel from all future searches.</p>
+      <div id="blocked-wrap" hidden>
+        <h2>Hidden channels</h2>
+        <div id="blocked-list" class="chips"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Sources</h2>
+      <div id="sources" class="sources"></div>
+    </section>
+
+    <section>
+      <h2>Sort</h2>
+      <select id="sort">
+        <option value="mixed">Mixed (site relevance)</option>
+        <option value="longest">Longest first</option>
+        <option value="shortest">Shortest first</option>
+        <option value="views">Most viewed</option>
+        <option value="rating">Top rated</option>
+      </select>
+      <h2>Depth</h2>
+      <select id="depth">
+        <option value="1">1 page per site</option>
+        <option value="2" selected>2 pages per site</option>
+        <option value="3">3 pages per site</option>
+        <option value="5">5 pages per site</option>
+      </select>
+    </section>
+  </aside>
+
+  <main>
+    <div id="summary" class="summary">Type a search, or press Search to browse popular videos.</div>
+    <div id="grid" class="grid"></div>
+    <div class="more"><button id="load-more" class="btn" hidden>Load more</button></div>
+  </main>
+</div>
+
+<dialog id="player" class="player">
+  <div class="player-head">
+    <span id="player-title"></span>
+    <a id="player-open" class="btn" target="_blank" rel="noopener noreferrer">Open on site ↗</a>
+    <button id="player-close" class="btn" type="button">✕</button>
+  </div>
+  <div class="player-frame"><iframe id="player-iframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe></div>
+</dialog>
+
+<template id="card-tpl">
+  <article class="card">
+    <a class="thumb" target="_blank" rel="noopener noreferrer">
+      <img loading="lazy" referrerpolicy="no-referrer" alt="">
+      <span class="dur"></span>
+      <span class="src"></span>
+    </a>
+    <div class="info">
+      <a class="title" target="_blank" rel="noopener noreferrer"></a>
+      <div class="meta"></div>
+      <div class="chips"></div>
+    </div>
+  </article>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    container_name: naughty_aggregator_app
+    restart: unless-stopped
+    ports:
+      - "3160:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

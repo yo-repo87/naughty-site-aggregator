@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+gitkey
+launch.sh
+CLAUDE.md
+.access_password
+.tunnel-backup-*.json
+gitkey
+.gitignore
+.git
