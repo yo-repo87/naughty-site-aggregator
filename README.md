@@ -1,5 +1,7 @@
 # Naughty Site Aggregator
 
+<img src="static/icon-512.png" width="96" alt="">
+
 One search page across Pornhub, XVideos and SpankBang. It fetches **metadata only**
 (titles, lengths, thumbnails, links). It never downloads or re-hosts any video.
 Videos play in each site's own embed player, or open on the site.
@@ -7,6 +9,8 @@ Videos play in each site's own embed player, or open on the site.
 ## Run
 
 ```bash
+docker run -d -p 3160:8000 --restart unless-stopped ghcr.io/yo-repo87/naughty-site-aggregator:latest
+# or build locally:
 docker compose up -d --build     # http://<host>:3160
 # or, without Docker:
 ./run.sh                         # http://localhost:8000
