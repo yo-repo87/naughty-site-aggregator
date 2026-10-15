@@ -39,3 +39,16 @@ proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.2
 - Pornhub: webmasters JSON API (tags, performers) merged by viewkey with the HTML search
   (`ul#videoSearchResult`, uploader/channel, `min_duration`).
 - XVideos: `div.thumb-block[data-eid]`, `durf` length buckets, pages are 0-based (`p`).
+
+## Image and Portainer template — added 2026-10-15
+
+- Repo: https://github.com/yo-repo87/naughty-site-aggregator (public). Push with the token in
+  `gitkey` via a one-off credential helper; it is not stored in the remote URL.
+- Every push to `main` runs `.github/workflows/docker.yml`, publishing
+  `ghcr.io/yo-repo87/naughty-site-aggregator:latest` (+ `:<sha>`) for linux/amd64 and linux/arm64.
+  The package is public (anonymous pulls work).
+- Portainer template entry lives in the `pi-hosted` fork (`/home/pi/Claude/AppRepo/pi-hosted`, remote
+  `fork`): `template/apps/naughty-site-aggregator.json`, `stack/naughty-site-aggregator.yml`,
+  `images/naughty-site-aggregator.png`. After editing, run `build/joinApps.sh` and push `fork master`.
+- Icon source: `static/icon.svg`; PNGs (`icon-512.png`, `apple-touch-icon.png`) are rendered from it
+  with headless Chromium.
