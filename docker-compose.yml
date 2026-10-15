@@ -5,8 +5,22 @@ services:
     restart: unless-stopped
     ports:
       - "3160:8000"
+    # Accounts: DATABASE_URL, DATA_KEY, INDEX_KEY, PUBLIC_URL and the optional
+    # Google/Facebook/Discord keys live in .env (never committed).
+    env_file:
+      - .env
+    volumes:
+      # CA certificate of the shared Postgres, for verify-full TLS (DB_SSL_ROOT_CERT)
+      - ./certs:/certs:ro
+    networks:
+      - default
+      - shared-postgres-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+networks:
+  shared-postgres-net:
+    external: true

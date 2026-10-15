@@ -68,3 +68,33 @@ proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.2
   `images/naughty-site-aggregator.png`. After editing, run `build/joinApps.sh` and push `fork master`.
 - Icon source: `static/icon.svg`; PNGs (`icon-512.png`, `apple-touch-icon.png`) are rendered from it
   with headless Chromium.
+
+## Accounts — added 2026-10-15
+
+- Code: `aggregator/auth/` (config, crypto, db + `schema.sql`, sessions, challenges, passkeys,
+  oauth, routes, web). UI: `static/auth.js` (+ styles at the end of `static/style.css`).
+  Accounts switch on only when `DATABASE_URL`, `DATA_KEY` and `INDEX_KEY` are set.
+- Config lives in `.env` (mode 600, gitignored, not in the image). **`DATA_KEY` and `INDEX_KEY`
+  must never change or be lost**: every personal field is AES-256-GCM under `DATA_KEY`, and email
+  lookups / session / backup-code hashes are HMACs under `INDEX_KEY`. There is no key rotation yet
+  (ciphertexts carry a version byte for when there is).
+- Database: shared Postgres (`/home/pi/Claude/shared-postgres`), database + role `naughtyaggregator`,
+  password in `.env`. Schema is applied on every start (idempotent, no migration tool). Added to the
+  shared backup sidecar's `POSTGRES_DB` list (compose backup: `docker-compose.yml.bak-before-naughtyaggregator`).
+- **TLS on the shared Postgres (changed 2026-10-15, affects the whole server):** self-signed EC cert
+  `server.crt`/`server.key` in its data dir (CN/SAN `shared_postgres`, valid to 2036), `ssl = on`,
+  `ssl_min_protocol_version = TLSv1.2` via `ALTER SYSTEM` + reload (no restart; other apps
+  unaffected, they connect as before). `pg_hba.conf` has `hostssl` for `naughtyaggregator` and
+  `hostnossl … reject`, so this app can only connect with TLS (backup: `pg_hba.conf.bak-before-naughtyaggregator`).
+  The app uses `DB_SSL=verify-full` against `certs/shared-postgres-ca.crt` (copy of `server.crt`,
+  gitignored, mounted read-only at `/certs`). To undo TLS server-wide:
+  `ALTER SYSTEM RESET ssl; ALTER SYSTEM RESET ssl_min_protocol_version; SELECT pg_reload_conf();`
+  and restore the pg_hba backup (then set `DB_SSL=disable` here).
+- Public site: `PUBLIC_URL=https://search.selfhosted.vip`, `REQUIRE_HTTPS=true` (LAN http redirects
+  there; localhost exempt for the health check). WebAuthn RP id = that hostname, so passkeys made
+  there only work there. NPM basic auth is still in front of everything.
+- Rate limits are in memory (per process): register 5/10 min, login 10/min per IP; accounts lock
+  for 15 min after 8 wrong passwords. Sensitive changes need a "confirm it's you" within 15 min.
+- OAuth providers: none configured yet. Redirect URLs: `<PUBLIC_URL>/api/auth/oauth/<provider>/callback`.
+  Accounts are never auto-linked by email (takeover risk): link from the Security tab.
+- Tests used throwaway accounts on the live database and deleted them; 0 users after testing.

@@ -14,16 +14,7 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <!-- use-credentials: the public site sits behind HTTP basic auth, which a plain manifest fetch wouldn't send -->
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
-<script>
-  // Pick the layout before first paint: phones, tablets (touch without a mouse) and
-  // narrow windows get the mobile layout; desktops keep the sidebar layout.
-  (function () {
-    var mq = matchMedia("(max-width: 860px), (hover: none) and (pointer: coarse)");
-    var set = function () { document.documentElement.classList.toggle("mobile", mq.matches); };
-    set();
-    mq.addEventListener("change", function () { set(); window.dispatchEvent(new Event("layoutchange")); });
-  })();
-</script>
+<script src="/static/boot.js"></script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -51,6 +42,7 @@
     </div>
     <button class="primary" type="submit">Search</button>
   </form>
+  <div id="account-slot" class="account-slot"></div>
 </header>
 
 <div id="quick-len" class="quick-len" aria-label="Quick length filters"></div>
@@ -171,5 +163,6 @@
 </template>
 
 <script src="/static/app.js"></script>
+<script src="/static/auth.js"></script>
 </body>
 </html>

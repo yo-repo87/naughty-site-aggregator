@@ -65,6 +65,7 @@ function saveSettings() {
       blocked: [...state.blocked], autoplay: els.autoplay.checked,
     }));
   } catch { /* storage unavailable: settings just won't persist */ }
+  window.AggAuth?.settingsChanged(); // signed in: sync to the account (encrypted server-side)
 }
 
 /* ---------- helpers ---------- */
@@ -134,6 +135,7 @@ async function search({ append = false } = {}) {
   try {
     const page = state.page + 1;
     const res = await fetch("/api/search?" + new URLSearchParams({ ...params, page }));
+    if (res.status === 401) { window.AggAuth?.requireLogin(); throw new Error("sign in to search"); }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (seq !== state.searchSeq) return; // a newer search superseded this one

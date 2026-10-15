@@ -2,3 +2,9 @@ fastapi
 uvicorn
 curl_cffi
 selectolax
+asyncpg
+argon2-cffi
+cryptography
+pyotp
+webauthn
+segno

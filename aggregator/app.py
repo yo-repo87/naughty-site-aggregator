@@ -12,7 +12,9 @@ Precise filtering (slider, excludes) happens in the browser.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from urllib.parse import urlparse
@@ -21,6 +23,8 @@ from fastapi import FastAPI, HTTPException, Query as Q
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .auth import db as auth_db, routes as auth_routes, web as auth_web
+from .auth.config import settings as auth_settings
 from .sources import SOURCES
 from .sources.base import Query, Video, session
 
@@ -28,7 +32,23 @@ STATIC = Path(__file__).resolve().parent.parent / "static"
 CACHE_TTL = 600
 _cache: dict[tuple, tuple[float, list[Video]]] = {}
 
-app = FastAPI(title="Naughty Site Aggregator")
+log = logging.getLogger("aggregator")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Accounts are optional: without DATABASE_URL / DATA_KEY / INDEX_KEY the app
+    # runs search-only and the UI shows no sign-in.
+    if auth_settings.enabled:
+        await auth_db.connect()
+        log.warning("accounts enabled (db TLS: %s)", auth_settings.db_ssl)
+    yield
+    await auth_db.close()
+
+
+app = FastAPI(title="Naughty Site Aggregator", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+auth_web.install(app)
+app.include_router(auth_routes.router)
 
 
 async def _fetch_page(name: str, q: Query) -> list[Video]:

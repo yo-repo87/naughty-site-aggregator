@@ -25,6 +25,46 @@ performer / channel / tags), swipeable length chips, filters in a slide-up sheet
 infinite scroll, a full-screen player, Back-button support, and optional auto-play previews.
 It is installable ("Add to Home Screen") and opens like an app.
 
+## Accounts (optional)
+
+Without a database the app is search-only. With one, people can create accounts to sync their
+filters, hidden channels and source choices across devices.
+
+- **Sign in:** email + password (Argon2id), **passkeys** (fingerprint / face / device PIN, no
+  password), **security keys** (USB/NFC; with their PIN they sign in on their own), and
+  **Google / Facebook / Discord** — each button appears only when its keys are configured.
+- **Two-step sign-in:** authenticator app (TOTP, replay-protected) or a security key after the
+  password, plus 10 single-use backup codes.
+- **Security tab** for each user: passkeys, security keys, authenticator app, backup codes,
+  password, connected accounts, signed-in devices (sign out remotely) and recent activity.
+  Sensitive changes ask you to confirm it's you; you can't remove your last way to sign in.
+- **Encryption:** email, name, authenticator secret, provider ids, device/IP info and synced
+  settings are AES-256-GCM encrypted (each value bound to its row); email lookups use keyed
+  hashes; session tokens and backup codes are stored only as keyed hashes. The database
+  connection can require TLS with certificate verification (`DB_SSL=verify-full`). Cookies are
+  `__Host-`, `Secure`, `HttpOnly`, `SameSite=Lax`; responses carry HSTS and a strict CSP;
+  cross-site requests are refused.
+
+### Configuration (`.env`)
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres URL. Leave empty for search-only. |
+| `DB_SSL` | `disable`, `require` or `verify-full` (recommended). |
+| `DB_SSL_ROOT_CERT` | CA/server certificate used by `verify-full`. |
+| `DATA_KEY` / `INDEX_KEY` | Two different 32-byte keys, base64url (`python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"`). **Never change or lose them** — encrypted data can't be read without `DATA_KEY`. |
+| `PUBLIC_URL` | The public HTTPS address (passkeys, OAuth redirects, secure cookies). |
+| `REQUIRE_HTTPS` | `true` redirects any other address to `PUBLIC_URL`. |
+| `REQUIRE_LOGIN` | `true` means searching needs an account. |
+| `ALLOW_REGISTRATION` | `false` stops new sign-ups. |
+| `GOOGLE_CLIENT_ID` / `_SECRET`, `FACEBOOK_…`, `DISCORD_…` | Optional providers. |
+
+Provider redirect URL to register: `<PUBLIC_URL>/api/auth/oauth/<google|facebook|discord>/callback`
+
+- **Google:** Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web).
+- **Facebook:** developers.facebook.com → Create app → Facebook Login → Valid OAuth Redirect URIs.
+- **Discord:** discord.com/developers → Applications → OAuth2 → Redirects.
+
 ## What each source supports
 
 | Site | How | Performer / tag search | Channel shown | Length filter on the site | Length precision | In-page player |

@@ -9,3 +9,5 @@ launch.sh
 .venv/
 __pycache__/
 *.pyc
+certs/
+!.env.example
