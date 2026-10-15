@@ -1,6 +1,6 @@
 # NaughtySiteAggregator
 
-Metadata-only search across Pornhub, XVideos and SpankBang (see README.md). FastAPI backend
+Metadata-only search across ten free tube sites (see README.md for the per-site table). FastAPI backend
 (`aggregator/`, one adapter per site in `aggregator/sources/`), static UI in `static/`.
 Nothing is downloaded or proxied; the UI uses each site's own thumbnails, previews and embeds.
 
@@ -38,7 +38,19 @@ proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.2
   is badged `channel` / `pornstar` / `tag`; only channel goes into `uploader`.
 - Pornhub: webmasters JSON API (tags, performers) merged by viewkey with the HTML search
   (`ul#videoSearchResult`, uploader/channel, `min_duration`).
-- XVideos: `div.thumb-block[data-eid]`, `durf` length buckets, pages are 0-based (`p`).
+- XVideos: `div.thumb-block[data-eid]`, `durf` length buckets, pages are 0-based (`p`). An empty
+  `k` is a 500: keyword-less browsing uses the homepage, then `/new/N`.
+- Tube8 + YouPorn share `aylo_html.py` (`article.video-box`, `min_minutes`/`max_minutes`, `page`).
+- RedTube: JSON API like Pornhub's, but `stars[]` is ignored (performer goes into the text).
+- Eporner: JSON API; decode `r.content` as UTF-8 (the charset header is unreliable); rate is 0-5.
+- XNXX: path `/search/<bucket>/<query>/<page-1>`; embed is `/embedframe/<data-eid>`.
+- xHamster: parse `window.initials` JSON (`searchResult.videoThumbProps`); embed uses the code
+  at the end of `pageURL`, not the numeric id.
+- YouJizz: lexbor lower-cases attributes (`data-videoid`); embed URL is a 500, so `embed_url`
+  is empty and the UI opens the site instead.
+- Pornhub `pix-*` thumbnails need a Pornhub Referer: routed through `/api/thumb` (allow-listed).
+- Client settings store `sourcesOff` so newly added sites start enabled; legacy `sources`
+  (enabled list) is converted once using `LEGACY_SOURCES` in `static/app.js`.
 
 ## Image and Portainer template — added 2026-10-15
 

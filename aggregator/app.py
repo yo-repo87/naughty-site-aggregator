@@ -15,12 +15,14 @@ import asyncio
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Query as Q
-from fastapi.responses import FileResponse
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Query as Q
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .sources import SOURCES
-from .sources.base import Query, Video
+from .sources.base import Query, Video, session
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 CACHE_TTL = 600
@@ -88,6 +90,30 @@ async def search(
             status[name] = {"ok": True, "count": len(res)}
             videos.extend(v.to_dict() for v in res)
     return {"videos": videos, "sources": status, "page": page}
+
+
+# Pornhub's newer "pix-*" thumbnail links only load with a Pornhub Referer,
+# which a browser can't send from this site. This relays those thumbnail
+# images only (allow-listed CDN host, image content types, size-capped);
+# videos are never relayed.
+THUMB_HOSTS = (".phncdn.com",)
+THUMB_MAX_BYTES = 2_000_000
+
+
+@app.get("/api/thumb")
+async def thumb(u: str):
+    host = urlparse(u).hostname or ""
+    if urlparse(u).scheme != "https" or not host.endswith(THUMB_HOSTS):
+        raise HTTPException(400, "host not allowed")
+    try:
+        async with session() as s:
+            r = await s.get(u, headers={"Referer": "https://www.pornhub.com/"})
+    except Exception:
+        raise HTTPException(502, "thumbnail unavailable")
+    ctype = r.headers.get("content-type", "")
+    if r.status_code != 200 or not ctype.startswith("image/") or len(r.content) > THUMB_MAX_BYTES:
+        raise HTTPException(502, "thumbnail unavailable")
+    return Response(r.content, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/")

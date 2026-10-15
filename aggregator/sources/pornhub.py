@@ -14,6 +14,8 @@ import asyncio
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
+from urllib.parse import quote, urlparse
+
 from .base import Query, Video, keywords, parse_count, parse_duration, session, unescape
 
 NAME = "pornhub"
@@ -23,6 +25,13 @@ API = BASE + "/webmasters/search"
 
 def _embed(key: str) -> str:
     return f"{BASE}/embed/{key}"
+
+
+def _thumb(url: str) -> str:
+    """pix-* CDN thumbnails need a Pornhub Referer: route them through /api/thumb."""
+    if (urlparse(url).hostname or "").startswith("pix-"):
+        return "/api/thumb?u=" + quote(url, safe="")
+    return url
 
 
 async def _api(q: Query) -> list[Video]:
@@ -58,8 +67,8 @@ async def _api(q: Query) -> list[Video]:
             title=v.get("title", ""),
             url=v.get("url") or f"{BASE}/view_video.php?viewkey={key}",
             embed_url=_embed(key),
-            thumb=(thumbs[0].get("src") if thumbs else None) or v.get("default_thumb", ""),
-            thumb_alt=v.get("default_thumb", ""),
+            thumb=_thumb((thumbs[0].get("src") if thumbs else None) or v.get("default_thumb", "")),
+            thumb_alt=_thumb(v.get("default_thumb", "")),
             duration=parse_duration(v.get("duration", "0:00")),
             duration_exact=True,
             views=int(v["views"]) if str(v.get("views", "")).isdigit() else None,
@@ -140,7 +149,9 @@ async def search(q: Query) -> list[Video]:
         if h:
             v.uploader, v.uploader_url = h.uploader, h.uploader_url
             v.preview = v.preview or h.preview
-            v.thumb_alt = h.thumb or v.thumb_alt
+            # Prefer the HTML page's thumbnail: it never needs the relay.
+            if h.thumb:
+                v.thumb, v.thumb_alt = h.thumb, v.thumb
         merged.append(v)
     # Interleave HTML-only finds after the API ones, keeping site order.
     merged.extend(v for v in html_list if v.id in by_key)

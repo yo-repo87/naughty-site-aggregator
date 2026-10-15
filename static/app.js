@@ -1,10 +1,20 @@
 "use strict";
 
 const SOURCES = {
-  pornhub:   { label: "Pornhub",   color: "var(--pornhub)" },
-  xvideos:   { label: "XVideos",   color: "var(--xvideos)" },
-  spankbang: { label: "SpankBang", color: "var(--spankbang)" },
+  // ink = badge text colour that stays readable on that background
+  pornhub:   { label: "Pornhub",   color: "#ff9900", ink: "#000" },
+  xvideos:   { label: "XVideos",   color: "#d9262b", ink: "#fff" },
+  spankbang: { label: "SpankBang", color: "#3b82f6", ink: "#fff" },
+  tube8:     { label: "Tube8",     color: "#10b981", ink: "#000" },
+  youporn:   { label: "YouPorn",   color: "#ec4899", ink: "#fff" },
+  redtube:   { label: "RedTube",   color: "#a855f7", ink: "#fff" },
+  eporner:   { label: "Eporner",   color: "#22d3ee", ink: "#000" },
+  xnxx:      { label: "XNXX",      color: "#facc15", ink: "#000" },
+  xhamster:  { label: "xHamster",  color: "#a3e635", ink: "#000" },
+  youjizz:   { label: "YouJizz",   color: "#94a3b8", ink: "#000" },
 };
+// Sources that existed before settings stored the *disabled* list (see init).
+const LEGACY_SOURCES = ["pornhub", "xvideos", "spankbang"];
 const SLIDER_MAX = 180; // minutes; the top of the slider means "no upper limit"
 const DEFAULT_EXCLUDE = "trailer, teaser, preview, promo, sneak peek, #shorts, shorts";
 const STORE_KEY = "agg-settings-v1";
@@ -49,7 +59,8 @@ function saveSettings() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       min: +els.lenMin.value, max: +els.lenMax.value, exclude: els.exclude.value,
       strict: els.strict.checked, sort: els.sort.value, depth: els.depth.value,
-      sources: enabledSources(), blocked: [...state.blocked], autoplay: els.autoplay.checked,
+      sourcesOff: Object.keys(SOURCES).filter((n) => !enabledSources().includes(n)),
+      blocked: [...state.blocked], autoplay: els.autoplay.checked,
     }));
   } catch { /* storage unavailable: settings just won't persist */ }
 }
@@ -310,7 +321,8 @@ function card(v) {
   node.querySelector(".dur").textContent = (v.duration_exact ? "" : "~") + fmtDur(v.duration);
   const src = node.querySelector(".src");
   src.textContent = SOURCES[v.source].label;
-  src.classList.add(v.source);
+  src.style.background = SOURCES[v.source].color;
+  src.style.color = SOURCES[v.source].ink;
 
   const title = node.querySelector(".title");
   title.href = v.url;
@@ -454,6 +466,7 @@ function addTag(t) {
 function openPlayer(v) {
   els.playerTitle.textContent = v.title;
   els.playerOpen.href = v.url;
+  if (!v.embed_url) { window.open(v.url, "_blank", "noopener,noreferrer"); return; } // site has no embed player
   els.playerIframe.src = v.embed_url;
   for (const n of els.grid.querySelectorAll(".card video")) n.remove(); // no previews behind the player
   els.player.showModal();
@@ -474,7 +487,10 @@ function init() {
   });
 
   const s = loadSettings();
-  const enabled = new Set(s.sources || Object.keys(SOURCES));
+  // Remember what was switched *off*, so newly added sites start switched on.
+  // Older saves stored the enabled list; convert those once.
+  const off = new Set(s.sourcesOff || (s.sources ? LEGACY_SOURCES.filter((n) => !s.sources.includes(n)) : []));
+  const enabled = new Set(Object.keys(SOURCES).filter((n) => !off.has(n)));
   for (const [name, info] of Object.entries(SOURCES)) {
     const label = document.createElement("label");
     label.className = "source";
@@ -536,6 +552,12 @@ function init() {
   els.strict.addEventListener("change", () => { saveSettings(); render(); });
   els.sort.addEventListener("change", () => { saveSettings(); render(); });
   els.depth.addEventListener("change", saveSettings);
+  for (const [id, on] of [["sources-all", true], ["sources-none", false]]) {
+    $(id).addEventListener("click", () => {
+      for (const i of els.sources.querySelectorAll("input")) i.checked = on;
+      els.sources.dispatchEvent(new Event("change"));
+    });
+  }
   els.sources.addEventListener("change", () => {
     saveSettings();
     const missing = state.fetched && enabledSources().some((n) => !state.fetched.sources.split(",").includes(n));
