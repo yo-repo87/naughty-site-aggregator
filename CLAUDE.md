@@ -1,6 +1,6 @@
 # NaughtySiteAggregator
 
-Metadata-only search across ten free tube sites (see README.md for the per-site table). FastAPI backend
+Metadata-only search across twelve free tube sites (see README.md for the per-site table). FastAPI backend
 (`aggregator/`, one adapter per site in `aggregator/sources/`), static UI in `static/`.
 Nothing is downloaded or proxied; the UI uses each site's own thumbnails, previews and embeds.
 
@@ -48,6 +48,10 @@ proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.2
   at the end of `pageURL`, not the numeric id.
 - YouJizz: lexbor lower-cases attributes (`data-videoid`); embed URL is a 500, so `embed_url`
   is empty and the UI opens the site instead.
+- PornTrex: only cards inside `#list_videos_videos`; length buckets are path segments
+  (`ten-min`, `ten-thirty-min`, `thirty-all-min`) before the page number; unrated shows 0%.
+- HQPorner: titles rarely contain the query (search matches site tags); no keywords -> `/top/week`;
+  the player is a per-video third-party iframe, so `embed_url` is empty (opens the site).
 - Pornhub `pix-*` thumbnails need a Pornhub Referer: routed through `/api/thumb` (allow-listed).
 - Client settings store `sourcesOff` so newly added sites start enabled; legacy `sources`
   (enabled list) is converted once using `LEGACY_SOURCES` in `static/app.js`.

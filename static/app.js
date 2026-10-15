@@ -12,6 +12,8 @@ const SOURCES = {
   xnxx:      { label: "XNXX",      color: "#facc15", ink: "#000" },
   xhamster:  { label: "xHamster",  color: "#a3e635", ink: "#000" },
   youjizz:   { label: "YouJizz",   color: "#94a3b8", ink: "#000" },
+  porntrex:  { label: "PornTrex",  color: "#b45309", ink: "#fff" },
+  hqporner:  { label: "HQPorner",  color: "#e2e8f0", ink: "#000" },
 };
 // Sources that existed before settings stored the *disabled* list (see init).
 const LEGACY_SOURCES = ["pornhub", "xvideos", "spankbang"];

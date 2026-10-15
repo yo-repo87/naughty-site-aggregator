@@ -2,8 +2,8 @@
 
 <img src="static/icon-512.png" width="96" alt="">
 
-One search page across ten free tube sites: Pornhub, XVideos, SpankBang, Tube8, YouPorn,
-RedTube, Eporner, XNXX, xHamster and YouJizz. It fetches **metadata only**
+One search page across twelve free tube sites: Pornhub, XVideos, SpankBang, Tube8, YouPorn,
+RedTube, Eporner, XNXX, xHamster, YouJizz, PornTrex and HQPorner. It fetches **metadata only**
 (titles, lengths, thumbnails, links). It never downloads or re-hosts any video.
 Videos play in each site's own embed player, or open on the site.
 
@@ -39,6 +39,8 @@ It is installable ("Add to Home Screen") and opens like an app.
 | XNXX | HTML (same platform as XVideos) | Keywords | Creator uploads | Buckets 0–10, 10–20, 10+, 20+ | Minute (~) | Yes |
 | xHamster | JSON embedded in the search page | Keywords | Yes | Min/max minutes | Exact | Yes |
 | YouJizz | HTML | Keywords | No | None | Exact | No (opens the site) |
+| PornTrex | HTML (KVS script) | Keywords | No | Buckets <10, 10–30, 30+ | Exact | Yes |
+| HQPorner | HTML (HD-only site) | Keywords (matched against the site's tags) | No | None | Exact | No (opens the site) |
 
 The precise length slider, title-word excludes, channel include/hide and sorting all
 run in the browser, so they update as you change them. When you widen the length range
@@ -51,7 +53,7 @@ Videos are never relayed.
 ## API
 
 `GET /api/search?q=&actor=&channel=&tags=a,b&min_sec=&max_sec=&sources=pornhub,xvideos,...&page=1&pages=2`
-(`sources` defaults to all ten)
+(`sources` defaults to all twelve)
 
 ## Caveats
 
