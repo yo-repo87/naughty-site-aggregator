@@ -95,4 +95,15 @@ async def index():
     return FileResponse(STATIC / "index.html")
 
 
+# Served from the root so the service worker's scope covers the whole app.
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

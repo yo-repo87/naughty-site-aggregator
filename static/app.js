@@ -19,6 +19,9 @@ const els = {
   sort: $("sort"), depth: $("depth"), summary: $("summary"), grid: $("grid"), more: $("load-more"),
   player: $("player"), playerTitle: $("player-title"), playerOpen: $("player-open"),
   playerIframe: $("player-iframe"), cardTpl: $("card-tpl"),
+  adv: $("adv"), advToggle: $("adv-toggle"), quickLen: $("quick-len"),
+  sheet: $("filters"), backdrop: $("sheet-backdrop"), sheetDone: $("sheet-done"), autoplay: $("autoplay"),
+  mCount: $("m-count"), mFilterCount: $("m-filter-count"),
 };
 
 const state = {
@@ -30,7 +33,12 @@ const state = {
   searchSeq: 0,
   selected: new Map(), // channel key -> display name; non-empty = show only these
   blocked: new Map(),  // channel key -> display name; persisted
+  exhausted: false,    // last "load more" found nothing new: stop infinite scroll
 };
+
+// Set by the inline script in index.html before first paint.
+const isMobile = () => document.documentElement.classList.contains("mobile");
+const canHover = matchMedia("(hover: hover)");
 
 /* ---------- persistence ---------- */
 function loadSettings() {
@@ -41,7 +49,7 @@ function saveSettings() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       min: +els.lenMin.value, max: +els.lenMax.value, exclude: els.exclude.value,
       strict: els.strict.checked, sort: els.sort.value, depth: els.depth.value,
-      sources: enabledSources(), blocked: [...state.blocked],
+      sources: enabledSources(), blocked: [...state.blocked], autoplay: els.autoplay.checked,
     }));
   } catch { /* storage unavailable: settings just won't persist */ }
 }
@@ -103,7 +111,7 @@ async function search({ append = false } = {}) {
   const seq = ++state.searchSeq;
   state.loading = true;
   if (!append) {
-    state.page = 0; state.videos = []; state.sourceStatus = {}; state.selected.clear();
+    state.page = 0; state.videos = []; state.sourceStatus = {}; state.selected.clear(); state.exhausted = false;
     els.grid.innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join("");
     els.summary.textContent = "Searching " + sources.map((s) => SOURCES[s].label).join(", ") + "…";
   }
@@ -119,7 +127,9 @@ async function search({ append = false } = {}) {
     state.page = page;
     state.fetched = { ...params, minSec, maxSec };
     const seen = new Set(state.videos.map((v) => v.source + v.id));
+    const before = state.videos.length;
     for (const v of data.videos) if (!seen.has(v.source + v.id)) state.videos.push(v);
+    state.exhausted = append && state.videos.length === before;
     for (const [name, st] of Object.entries(data.sources)) {
       const prev = state.sourceStatus[name];
       state.sourceStatus[name] = { ...st, count: (append && prev ? prev.count : 0) + st.count };
@@ -196,7 +206,11 @@ function renderSources() {
     c.className = "count"; c.title = "";
     if (!st) c.textContent = "";
     else if (st.ok) c.textContent = `${st.count} fetched`;
-    else { c.textContent = "error"; c.classList.add("err"); c.title = st.error; }
+    else {
+      c.textContent = "error"; c.classList.add("err"); c.title = st.error;
+      // Touch screens can't hover for the title: tap shows it (without toggling the checkbox).
+      c.onclick = (e) => { e.preventDefault(); alert(st.error); };
+    }
   }
 }
 
@@ -245,6 +259,7 @@ function blockChannel(k, name) {
 }
 
 function showOnlyChannel(name) {
+  closeSheet();
   state.selected.clear();
   state.selected.set(chKey(name), name);
   render();
@@ -267,13 +282,19 @@ function render() {
   els.summary.innerHTML =
     `Showing <b>${list.length}</b> of ${state.videos.length} fetched` +
     (hidden ? ` · hidden: ${parts.join(", ")}` : "") +
-    (errs.length ? ` · <span style="color:var(--accent)">${errs.join(", ")} failed (hover source for details)</span>` : "");
+    (errs.length ? ` · <span style="color:var(--accent)">${errs.join(", ")} failed (${isMobile() ? "see Filters → Sources" : "hover source for details"})</span>` : "");
 
   const frag = document.createDocumentFragment();
   for (const v of list) frag.appendChild(card(v));
   els.grid.replaceChildren(frag);
   if (!list.length) els.grid.innerHTML = `<p class="hint">Nothing matches these filters. Try widening the length range or loading more.</p>`;
   els.more.hidden = state.videos.length === 0;
+  if (state.exhausted) els.more.textContent = "No more results";
+
+  els.mCount.textContent = `${list.length} shown`;
+  els.sheetDone.textContent = `Show ${list.length} result${list.length === 1 ? "" : "s"}`;
+  renderFilterBadge();
+  observeAutoplay();
 }
 
 function card(v) {
@@ -281,7 +302,10 @@ function card(v) {
   const thumb = node.querySelector(".thumb"), img = node.querySelector("img");
   thumb.href = v.url;
   img.src = v.thumb;
-  img.addEventListener("error", () => { if (v.thumb_alt && img.src !== v.thumb_alt) img.src = v.thumb_alt; });
+  img.addEventListener("error", () => {
+    if (v.thumb_alt && img.src !== v.thumb_alt) img.src = v.thumb_alt;
+    else img.style.visibility = "hidden"; // plain dark tile instead of broken-image alt text
+  });
   img.alt = v.title;
   node.querySelector(".dur").textContent = (v.duration_exact ? "" : "~") + fmtDur(v.duration);
   const src = node.querySelector(".src");
@@ -315,18 +339,100 @@ function card(v) {
     e.preventDefault();
     openPlayer(v);
   });
-  // Hover preview, streamed straight from the site's CDN.
+  // Hover preview, streamed straight from the site's CDN. Touch screens have
+  // no hover; they get the optional scroll auto-play instead.
   if (v.preview) {
-    let vid;
-    thumb.addEventListener("mouseenter", () => {
-      vid = Object.assign(document.createElement("video"), { src: v.preview, muted: true, loop: true, playsInline: true, autoplay: true });
-      vid.setAttribute("referrerpolicy", "no-referrer");
-      thumb.insertBefore(vid, thumb.querySelector(".dur"));
-    });
-    thumb.addEventListener("mouseleave", () => { vid?.remove(); vid = null; });
+    node.dataset.preview = v.preview;
+    thumb.addEventListener("mouseenter", () => { if (canHover.matches) startPreview(node); });
+    thumb.addEventListener("mouseleave", () => stopPreview(node));
   }
   return node;
 }
+
+function startPreview(node) {
+  if (node.querySelector("video") || !node.dataset.preview) return;
+  const thumb = node.querySelector(".thumb");
+  const vid = Object.assign(document.createElement("video"), { src: node.dataset.preview, muted: true, loop: true, playsInline: true, autoplay: true });
+  vid.setAttribute("referrerpolicy", "no-referrer");
+  vid.setAttribute("playsinline", "");
+  thumb.insertBefore(vid, thumb.querySelector(".dur"));
+}
+function stopPreview(node) {
+  node.querySelector(".thumb video")?.remove();
+}
+
+/* ---------- mobile: auto-play the preview of the card in view ---------- */
+let autoplayObserver = null;
+const visibleCards = new Set();
+function observeAutoplay() {
+  autoplayObserver?.disconnect();
+  visibleCards.clear();
+  for (const n of els.grid.querySelectorAll(".card video")) n.remove();
+  if (!isMobile() || !els.autoplay.checked) return;
+  autoplayObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) e.isIntersecting ? visibleCards.add(e.target) : (visibleCards.delete(e.target), stopPreview(e.target));
+    // Play one at a time: the top-most card that is mostly on screen.
+    const top = [...visibleCards].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    for (const c of visibleCards) c === top ? startPreview(c) : stopPreview(c);
+  }, { threshold: 0.75 });
+  for (const c of els.grid.querySelectorAll(".card[data-preview]")) autoplayObserver.observe(c);
+}
+
+/* ---------- mobile: filter sheet, quick chips, bottom bar ---------- */
+function openSheet() {
+  if (els.sheet.classList.contains("open")) return;
+  els.backdrop.hidden = false;
+  requestAnimationFrame(() => els.backdrop.classList.add("show"));
+  els.sheet.classList.add("open");
+  document.documentElement.classList.add("sheet-open");
+  history.pushState({ overlay: "sheet" }, "");
+}
+function closeSheet({ fromHistory = false } = {}) {
+  if (!els.sheet.classList.contains("open")) return;
+  els.sheet.classList.remove("open");
+  els.backdrop.classList.remove("show");
+  document.documentElement.classList.remove("sheet-open");
+  setTimeout(() => { if (!els.sheet.classList.contains("open")) els.backdrop.hidden = true; }, 250);
+  if (!fromHistory && history.state?.overlay === "sheet") history.back();
+}
+
+function renderQuickLen() {
+  const lo = +els.lenMin.value, hi = +els.lenMax.value;
+  for (const b of els.quickLen.querySelectorAll("button")) {
+    const [a, z] = b.dataset.preset.split(",").map(Number);
+    b.classList.toggle("active", a === lo && z === hi);
+  }
+}
+
+function renderFilterBadge() {
+  let n = 0;
+  if (+els.lenMin.value > 0 || +els.lenMax.value < SLIDER_MAX) n++;
+  if (els.strict.checked) n++;
+  if (state.selected.size) n++;
+  if (enabledSources().length < Object.keys(SOURCES).length) n++;
+  if (els.sort.value !== "mixed") n++;
+  els.mFilterCount.hidden = n === 0;
+  els.mFilterCount.textContent = n;
+  renderQuickLen();
+}
+
+function resetFilters() {
+  els.lenMin.value = 5; els.lenMax.value = SLIDER_MAX;
+  els.strict.checked = false;
+  els.sort.value = "mixed";
+  state.selected.clear();
+  for (const i of els.sources.querySelectorAll("input")) i.checked = true;
+  syncSlider(); saveSettings();
+  const missing = state.fetched && enabledSources().some((n) => !state.fetched.sources.split(",").includes(n));
+  missing || rangeNeedsRefetch() ? search() : render();
+}
+
+// Infinite scroll on mobile: fetch the next batch when the end of the list shows.
+const moreObserver = new IntersectionObserver((entries) => {
+  if (!entries[0].isIntersecting || !isMobile()) return;
+  if (state.loading || state.exhausted || !state.videos.length) return;
+  search({ append: true });
+}, { rootMargin: "600px 0px" });
 
 function chip(text, cls, onClick, title) {
   const b = document.createElement("button");
@@ -349,10 +455,12 @@ function openPlayer(v) {
   els.playerTitle.textContent = v.title;
   els.playerOpen.href = v.url;
   els.playerIframe.src = v.embed_url;
+  for (const n of els.grid.querySelectorAll(".card video")) n.remove(); // no previews behind the player
   els.player.showModal();
+  if (isMobile()) history.pushState({ overlay: "player" }, "");
 }
 function closePlayer() {
-  els.player.close();
+  if (els.player.open) els.player.close();
 }
 
 /* ---------- init ---------- */
@@ -382,21 +490,48 @@ function init() {
   els.strict.checked = !!s.strict;
   if (s.sort) els.sort.value = s.sort;
   if (s.depth) els.depth.value = s.depth;
+  els.autoplay.checked = !!s.autoplay;
   syncSlider();
 
-  els.form.addEventListener("submit", (e) => { e.preventDefault(); saveSettings(); search(); });
+  // Swipeable length chips (mobile) reuse the sidebar presets.
+  for (const b of document.querySelectorAll(".presets [data-preset]")) {
+    const c = b.cloneNode(true);
+    els.quickLen.appendChild(c);
+  }
+  renderQuickLen();
+
+  els.form.addEventListener("submit", (e) => {
+    e.preventDefault(); saveSettings(); search();
+    if (isMobile()) document.activeElement?.blur(); // drop the on-screen keyboard
+  });
+  els.advToggle.addEventListener("click", () => {
+    const open = els.adv.classList.toggle("open");
+    els.advToggle.setAttribute("aria-expanded", open);
+    if (open) els.actor.focus();
+  });
+  if (els.actor.value || els.channel.value || els.tags.value) els.advToggle.click();
   for (const r of [els.lenMin, els.lenMax]) {
-    r.addEventListener("input", (e) => { syncSlider(e); render(); });
+    r.addEventListener("input", (e) => { syncSlider(e); render(); renderQuickLen(); });
     r.addEventListener("change", () => { saveSettings(); if (rangeNeedsRefetch()) search(); });
   }
   for (const b of document.querySelectorAll("[data-preset]")) {
     b.addEventListener("click", () => {
       const [lo, hi] = b.dataset.preset.split(",");
       els.lenMin.value = lo; els.lenMax.value = hi;
-      syncSlider(); saveSettings();
+      syncSlider(); saveSettings(); renderQuickLen();
       rangeNeedsRefetch() ? search() : render();
     });
   }
+  els.autoplay.addEventListener("change", () => { saveSettings(); observeAutoplay(); });
+  $("m-filters").addEventListener("click", openSheet);
+  $("m-top").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  els.sheetDone.addEventListener("click", () => { closeSheet(); window.scrollTo({ top: 0 }); });
+  els.backdrop.addEventListener("click", () => closeSheet());
+  $("sheet-reset").addEventListener("click", resetFilters);
+  // The phone's Back button closes the sheet / player instead of leaving the page.
+  window.addEventListener("popstate", () => { closePlayer(); closeSheet({ fromHistory: true }); });
+  window.addEventListener("layoutchange", () => { if (!isMobile()) closeSheet(); observeAutoplay(); });
+  moreObserver.observe(els.more.parentElement);
   els.exclude.addEventListener("input", () => { saveSettings(); render(); });
   els.strict.addEventListener("change", () => { saveSettings(); render(); });
   els.sort.addEventListener("change", () => { saveSettings(); render(); });
@@ -410,9 +545,15 @@ function init() {
   els.channelFind.addEventListener("input", render);
   els.channelActive.addEventListener("click", () => { state.selected.clear(); render(); });
   $("player-close").addEventListener("click", closePlayer);
-  els.player.addEventListener("close", () => { els.playerIframe.src = "about:blank"; });
+  els.player.addEventListener("close", () => {
+    els.playerIframe.src = "about:blank";
+    // Closed by ✕, Esc or backdrop: drop the history entry openPlayer pushed.
+    // (When Back closed it, popstate already moved past that entry.)
+    if (history.state?.overlay === "player") history.back();
+  });
   els.player.addEventListener("click", (e) => { if (e.target === els.player) closePlayer(); });
-  $("toggle-filters").addEventListener("click", () => $("filters").classList.toggle("open"));
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
 init();

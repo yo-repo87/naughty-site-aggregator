@@ -2,11 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aggregator">
 <meta name="referrer" content="no-referrer">
 <title>Aggregator</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<!-- use-credentials: the public site sits behind HTTP basic auth, which a plain manifest fetch wouldn't send -->
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<script>
+  // Pick the layout before first paint: phones, tablets (touch without a mouse) and
+  // narrow windows get the mobile layout; desktops keep the sidebar layout.
+  (function () {
+    var mq = matchMedia("(max-width: 860px), (hover: none) and (pointer: coarse)");
+    var set = function () { document.documentElement.classList.toggle("mobile", mq.matches); };
+    set();
+    mq.addEventListener("change", function () { set(); window.dispatchEvent(new Event("layoutchange")); });
+  })();
+</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -23,19 +40,29 @@
 </div>
 
 <header class="topbar">
-  <div class="brand">Aggregator</div>
+  <div class="brand"><img src="/static/icon.svg" alt=""><span>Aggregator</span></div>
   <form id="search-form" class="search">
     <input id="q" type="search" placeholder="Title / keywords" autocomplete="off">
-    <input id="actor" type="search" placeholder="Performer" autocomplete="off">
-    <input id="channel" type="search" placeholder="Channel / studio" autocomplete="off">
-    <input id="tags" type="search" placeholder="Tags (comma separated)" autocomplete="off">
+    <button id="adv-toggle" class="adv-toggle" type="button" aria-expanded="false" aria-controls="adv" title="Performer, channel, tags">⋯</button>
+    <div id="adv" class="adv">
+      <input id="actor" type="search" placeholder="Performer" autocomplete="off">
+      <input id="channel" type="search" placeholder="Channel / studio" autocomplete="off">
+      <input id="tags" type="search" placeholder="Tags (comma separated)" autocomplete="off">
+    </div>
     <button class="primary" type="submit">Search</button>
   </form>
-  <button id="toggle-filters" class="btn filters-btn" type="button">Filters</button>
 </header>
 
+<div id="quick-len" class="quick-len" aria-label="Quick length filters"></div>
+
 <div class="layout">
-  <aside id="filters" class="filters">
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <aside id="filters" class="filters" aria-label="Filters">
+    <div class="sheet-head">
+      <span class="handle" aria-hidden="true"></span>
+      <h2>Filters</h2>
+      <button id="sheet-reset" type="button" class="link-btn">Reset</button>
+    </div>
     <section>
       <h2>Length</h2>
       <div class="range-label"><span id="len-min-label">0:00</span><span>–</span><span id="len-max-label">Any</span></div>
@@ -94,6 +121,15 @@
         <option value="5">5 pages per site</option>
       </select>
     </section>
+
+    <section class="mobile-only">
+      <h2>Mobile</h2>
+      <label class="check"><input id="autoplay" type="checkbox"> Auto-play previews while scrolling (uses more data)</label>
+    </section>
+
+    <div class="sheet-foot">
+      <button id="sheet-done" type="button" class="primary">Show results</button>
+    </div>
   </aside>
 
   <main>
@@ -102,6 +138,12 @@
     <div class="more"><button id="load-more" class="btn" hidden>Load more</button></div>
   </main>
 </div>
+
+<nav class="mbar" aria-label="Quick actions">
+  <button id="m-filters" type="button"><span class="ico" aria-hidden="true">⚙</span>Filters<span id="m-filter-count" class="badge" hidden></span></button>
+  <span id="m-count" class="m-count"></span>
+  <button id="m-top" type="button" aria-label="Back to top"><span class="ico" aria-hidden="true">↑</span>Top</button>
+</nav>
 
 <dialog id="player" class="player">
   <div class="player-head">

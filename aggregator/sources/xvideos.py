@@ -28,11 +28,17 @@ def duration_bucket(min_sec: int, max_sec: int | None) -> str:
 
 
 async def search(q: Query) -> list[Video]:
-    params = {"k": keywords(q) or "", "durf": duration_bucket(q.min_sec, q.max_sec)}
-    if q.page > 1:
-        params["p"] = q.page - 1  # site pages are 0-based
+    params = {"durf": duration_bucket(q.min_sec, q.max_sec)}
+    path = "/"
+    if kw := keywords(q):
+        params["k"] = kw
+        if q.page > 1:
+            params["p"] = q.page - 1  # site pages are 0-based
+    elif q.page > 1:
+        # An empty `k` is a 500 on XVideos; browse the homepage, then /new/N.
+        path = f"/new/{q.page - 1}"
     async with session() as s:
-        r = await s.get(BASE + "/", params=params)
+        r = await s.get(BASE + path, params=params)
         r.raise_for_status()
         doc = HTMLParser(r.text)
 

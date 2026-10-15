@@ -59,6 +59,7 @@ async def _api(q: Query) -> list[Video]:
             url=v.get("url") or f"{BASE}/view_video.php?viewkey={key}",
             embed_url=_embed(key),
             thumb=(thumbs[0].get("src") if thumbs else None) or v.get("default_thumb", ""),
+            thumb_alt=v.get("default_thumb", ""),
             duration=parse_duration(v.get("duration", "0:00")),
             duration_exact=True,
             views=int(v["views"]) if str(v.get("views", "")).isdigit() else None,
@@ -139,7 +140,7 @@ async def search(q: Query) -> list[Video]:
         if h:
             v.uploader, v.uploader_url = h.uploader, h.uploader_url
             v.preview = v.preview or h.preview
-            v.thumb_alt = h.thumb
+            v.thumb_alt = h.thumb or v.thumb_alt
         merged.append(v)
     # Interleave HTML-only finds after the API ones, keeping site order.
     merged.extend(v for v in html_list if v.id in by_key)

@@ -16,6 +16,14 @@ docker compose up -d --build     # http://<host>:3160
 ./run.sh                         # http://localhost:8000
 ```
 
+## Phones and tablets
+
+Phones, tablets (touch without a mouse) and narrow windows get a mobile layout automatically;
+desktops keep the sidebar layout. The mobile layout has a compact search bar (⋯ opens
+performer / channel / tags), swipeable length chips, filters in a slide-up sheet, a bottom bar,
+infinite scroll, a full-screen player, Back-button support, and optional auto-play previews.
+It is installable ("Add to Home Screen") and opens like an app.
+
 ## What each source supports
 
 | | Pornhub | XVideos | SpankBang |
