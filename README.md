@@ -17,6 +17,23 @@ docker compose up -d --build     # http://<host>:3160
 ./run.sh                         # http://localhost:8000
 ```
 
+## Performer and channel suggestions
+
+The Performer and Channel / studio boxes are also dropdowns, like Pornhub's search suggestions:
+click one to scroll through every performer (about 21,000) or channel (about 2,800), most popular
+first, with each one's picture, video count and the sites that list them. Type to narrow the list;
+picking a name runs the search. The lists come from Pornhub's full performer and channel
+directories plus the most popular pages of xHamster's and XVideos'. They are rebuilt daily and
+cached in `/data` (mount a volume there to keep them across updates). Free text still works for
+names that aren't listed.
+
+## Favorite performers
+
+Star a performer (☆) in the Performer dropdown, on a video's performer chip, or in the Performer
+box itself. Favorites appear at the top of the dropdown and in a "Favorite performers" list at the
+top of the filters panel; one click searches that performer. They are saved with the other
+settings: in the browser, and, when signed in, synced (encrypted) to the account.
+
 ## Phones and tablets
 
 Phones, tablets (touch without a mouse) and narrow windows get a mobile layout automatically;
@@ -94,6 +111,8 @@ Videos are never relayed.
 
 `GET /api/search?q=&actor=&channel=&tags=a,b&min_sec=&max_sec=&sources=pornhub,xvideos,...&page=1&pages=2`
 (`sources` defaults to all twelve)
+
+`GET /api/suggest?kind=performer|channel&q=&offset=0&limit=30` (dropdown entries; empty `q` = everyone by popularity)
 
 ## Caveats
 

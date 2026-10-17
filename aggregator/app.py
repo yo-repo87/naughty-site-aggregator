@@ -12,7 +12,9 @@ Precise filtering (slider, excludes) happens in the browser.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,9 +22,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query as Q
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from . import directory
 from .auth import db as auth_db, routes as auth_routes, web as auth_web
 from .auth.config import settings as auth_settings
 from .sources import SOURCES
@@ -42,7 +45,9 @@ async def lifespan(app: FastAPI):
     if auth_settings.enabled:
         await auth_db.connect()
         log.warning("accounts enabled (db TLS: %s)", auth_settings.db_ssl)
+    refresher = asyncio.create_task(directory.keep_fresh())
     yield
+    refresher.cancel()
     await auth_db.close()
 
 
@@ -112,6 +117,23 @@ async def search(
     return {"videos": videos, "sources": status, "page": page}
 
 
+@app.get("/api/suggest")
+async def suggest(
+    kind: str = Q("performer", pattern="^(performer|channel)$"),
+    q: str = Q("", max_length=100),
+    offset: int = Q(0, ge=0),
+    limit: int = Q(30, ge=1, le=100),
+):
+    """Dropdown entries for the performer / channel boxes; empty q lists everyone by popularity."""
+    book = directory.performers if kind == "performer" else directory.channels
+    hits, total = book.find(q, offset, limit)
+    return {
+        "items": [{"name": e.name, "thumb": e.thumb, "videos": e.videos, "sites": e.sites} for e in hits],
+        "total": total,
+        "ready": bool(book.entries),
+    }
+
+
 # Pornhub's newer "pix-*" thumbnail links only load with a Pornhub Referer,
 # which a browser can't send from this site. This relays those thumbnail
 # images only (allow-listed CDN host, image content types, size-capped);
@@ -136,9 +158,33 @@ async def thumb(u: str):
     return Response(r.content, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
 
 
+# Cache busting: the page refers to each static file as /static/x.js?v=<content
+# hash>, so a CDN (Cloudflare caches .js/.css for hours) or browser can never
+# mix an old script with a new page. Versioned files may be cached forever;
+# the page itself is never cached.
+_ASSET_RE = re.compile(r'"/static/([\w.-]+)"')
+_index_cache: tuple[tuple, str] | None = None
+
+
+def _asset_version(name: str) -> str:
+    return hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:12]
+
+
+def _index_html() -> str:
+    global _index_cache
+    files = [STATIC / "index.html", *sorted(STATIC.iterdir())]
+    stamp = tuple(f.stat().st_mtime_ns for f in files if f.is_file())
+    if _index_cache is None or _index_cache[0] != stamp:  # files changed (dev reload)
+        html = (STATIC / "index.html").read_text()
+        html = _ASSET_RE.sub(
+            lambda m: f'"/static/{m[1]}?v={_asset_version(m[1])}"' if (STATIC / m[1]).is_file() else m[0], html)
+        _index_cache = (stamp, html)
+    return _index_cache[1]
+
+
 @app.get("/")
 async def index():
-    return FileResponse(STATIC / "index.html")
+    return HTMLResponse(_index_html(), headers={"Cache-Control": "no-cache"})
 
 
 # Served from the root so the service worker's scope covers the whole app.
@@ -152,4 +198,13 @@ async def manifest():
     return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
 
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class VersionedStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            versioned = b"v=" in scope.get("query_string", b"")
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if versioned else "no-cache"
+        return response
+
+
+app.mount("/static", VersionedStatic(directory=STATIC), name="static")

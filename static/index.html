@@ -56,6 +56,11 @@
       <button id="sheet-reset" type="button" class="link-btn">Reset</button>
     </div>
     <section>
+      <h2>Favorite performers <span id="fav-count" class="count"></span></h2>
+      <div id="fav-list" class="fav-list"></div>
+    </section>
+
+    <section>
       <h2>Length</h2>
       <div class="range-label"><span id="len-min-label">0:00</span><span>–</span><span id="len-max-label">Any</span></div>
       <div class="dual-range">
@@ -163,6 +168,7 @@
 </template>
 
 <script src="/static/app.js"></script>
+<script src="/static/combo.js"></script>
 <script src="/static/auth.js"></script>
 </body>
 </html>

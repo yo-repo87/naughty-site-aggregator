@@ -29,7 +29,7 @@ MIN_PASSWORD = 10
 LOCK_AFTER = 8
 LOCK_MINUTES = 15
 BACKUP_CODES = 10
-SETTINGS_MAX = 64 * 1024
+SETTINGS_MAX = 256 * 1024  # filters + up to 300 favorite performers with picture URLs
 EVENT_LABELS = {
     "registered": "Account created", "signed_in": "Signed in", "signed_out": "Signed out",
     "login_failed": "Failed sign-in attempt", "password_set": "Password changed",

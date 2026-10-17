@@ -4,7 +4,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY aggregator ./aggregator
 COPY static ./static
-RUN useradd -r -u 10001 app
+RUN useradd -r -u 10001 app && mkdir /data && chown app /data
+# Performer/channel directory cache (aggregator/directory.py); mount a volume to keep it across updates.
+ENV DIRECTORY_DIR=/data
 USER app
 EXPOSE 8000
 CMD ["uvicorn", "aggregator.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

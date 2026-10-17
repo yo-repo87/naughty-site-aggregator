@@ -142,6 +142,60 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .agegate-box h1 { margin-top: 0; }
 .row { display: flex; gap: 10px; }
 
+/* Performer / channel dropdowns (static/combo.js) */
+.combo { position: relative; min-width: 0; }
+.combo-list {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: max(100%, 380px);
+  max-height: min(60vh, 460px); overflow-y: auto; overscroll-behavior: contain;
+  margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,.55);
+}
+.combo-list[hidden] { display: none; }
+.combo-head, .combo-status { padding: 6px 8px; color: var(--muted); font-size: 12px; }
+.combo-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.combo-item:hover, .combo-item[aria-selected="true"] { background: var(--panel-2); }
+.combo-pic {
+  position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; background: var(--panel-2); color: var(--muted); font-size: 13px; font-weight: 700;
+}
+.combo-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.combo-channel .combo-pic { border-radius: 8px; width: 48px; background: #fff; }
+.combo-channel .combo-pic img { object-fit: contain; object-position: center; }
+.combo-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.combo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-name b { color: var(--accent); }
+.combo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; }
+.combo-site { padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700; line-height: 15px; }
+
+/* Favorite performers: stars in the dropdown / box / cards, tiles in the sidebar */
+.combo-star {
+  flex: none; margin-left: auto; width: 32px; height: 32px; padding: 0; border: 0; background: none;
+  font-size: 18px; line-height: 1; color: var(--muted); border-radius: 50%;
+}
+.combo-star:hover { color: var(--text); background: var(--panel-2); }
+.combo-star[aria-pressed="true"] { color: #fbbf24; }
+.combo.has-star input { padding-right: 34px; }
+.combo-boxstar { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; min-height: 0 !important; }
+.combo-boxstar[hidden] { display: none; }
+.fav-list { display: grid; gap: 2px; max-height: 320px; overflow: auto; }
+.fav { display: flex; align-items: center; border-radius: 8px; }
+.fav:hover, .fav.active { background: var(--panel-2); }
+.fav.active .fav-name { color: var(--accent); }
+.fav-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 5px 6px; border: 0; background: none; text-align: left; }
+.fav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-pic {
+  position: relative; flex: none; width: 34px; height: 34px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.fav-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.fav-rm { border: 0; background: none; padding: 4px 8px; color: var(--muted); visibility: hidden; }
+.fav:hover .fav-rm, .fav-rm:focus-visible, .mobile .fav-rm { visibility: visible; }
+.fav-rm:hover { color: var(--accent); }
+.chip-star::before { content: "☆"; margin-right: 3px; color: var(--muted); }
+.chip-star:hover::before { color: #fbbf24; }
+.chip.actor.fav .chip-star::before { content: "★"; color: #fbbf24; }
+.chip.actor.fav { border-color: #fbbf2466; }
+
 /* ---------- desktop: hide mobile-only parts ---------- */
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand img { width: 28px; height: 28px; }
@@ -167,6 +221,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .mobile .adv { display: none; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mobile .adv.open { display: grid; }
 .mobile .adv #tags { grid-column: 1 / -1; }
+/* Phones: the boxes are narrow, so the list spans the top bar (its containing
+   block); top stays auto so it still opens right under the box. */
+.mobile .combo { position: static; }
+.mobile .combo-list { top: auto; left: 12px; right: 12px; width: auto; max-height: 50vh; margin-top: 4px; }
 
 .mobile .quick-len {
   display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;

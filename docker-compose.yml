@@ -12,6 +12,8 @@ services:
     volumes:
       # CA certificate of the shared Postgres, for verify-full TLS (DB_SSL_ROOT_CERT)
       - ./certs:/certs:ro
+      # Performer/channel dropdown lists, so a rebuild doesn't re-crawl the sites
+      - aggregator-data:/data
     networks:
       - default
       - shared-postgres-net
@@ -20,6 +22,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  aggregator-data:
 
 networks:
   shared-postgres-net:

@@ -228,17 +228,29 @@
   async function done(m, msg) {
     m?.dlg.close();
     await refreshMe();
-    await pullSettings();
+    await pullSettings(true);
     toast(msg);
   }
 
   /* ---------- settings sync ---------- */
-  async function pullSettings() {
+  // mergeFavs: right after signing in, keep favorites starred on this device
+  // while signed out. On a normal page load the account's copy simply wins
+  // (merging then would bring back favorites removed on another device).
+  async function pullSettings(mergeFavs = false) {
     if (!me) return;
     try {
       const { settings } = await api("GET", "/api/me/settings");
       if (settings) {
         const local = localStorage.getItem(SETTINGS_KEY);
+        let localFavs = [];
+        try { localFavs = JSON.parse(local || "{}").favorites || []; } catch {}
+        const k = (n) => String(n).toLowerCase().replace(/[^a-z0-9]/g, "");
+        const known = new Set((settings.favorites || []).map((f) => k(f.name)));
+        const extra = mergeFavs ? localFavs.filter((f) => f && f.name && !known.has(k(f.name))) : [];
+        if (extra.length) {
+          settings.favorites = [...(settings.favorites || []), ...extra].sort((a, b) => a.name.localeCompare(b.name));
+          api("PUT", "/api/me/settings", { settings }).catch(() => {});
+        }
         if (local !== JSON.stringify(settings)) {
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
           location.reload(); // simplest way to apply every saved filter consistently
@@ -514,7 +526,7 @@
     if (!result) return;
     history.replaceState(null, "", location.pathname + location.search);
     const msg = p.get("msg");
-    if (result === "ok") { pullSettings(); toast("Signed in."); }
+    if (result === "ok") { pullSettings(true); toast("Signed in."); }
     else if (result === "linked") { toast(msg || "Account connected."); openAccount("security"); }
     else if (result === "reauth") { toast("Confirmed. Try your change again."); openAccount("security"); }
     else if (result === "second") openSignIn("second", { methods: (p.get("methods") || "").split(",") });
@@ -531,6 +543,12 @@
     if (!cfg.enabled) return;
     await refreshMe();
     handleFragment();
-    if (cfg.require_login && !me) openSignIn();
+    if (me) pullSettings(); // pick up changes made on other devices
+    if (cfg.require_login && !me) {
+      // The 18+ prompt comes first; the sign-in dialog would otherwise cover it.
+      const gate = document.getElementById("agegate");
+      if (gate && !gate.hidden) document.getElementById("age-yes").addEventListener("click", () => openSignIn(), { once: true });
+      else openSignIn();
+    }
   })();
 })();

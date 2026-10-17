@@ -12,17 +12,17 @@ Nothing is downloaded or proxied; the UI uses each site's own thumbnails, previe
 
 ## Public access (Cloudflare + NPM) — set up 2026-10-15
 
-Public URL: **https://search.selfhosted.vip** (HTTP Basic auth via NPM).
+Public URL: **https://search.selfhosted.vip**. Since 2026-10-17 there is no NPM basic auth: the app's own
+accounts gate it (`REQUIRE_LOGIN=true` in `.env`; open registration).
 
 Path: Cloudflare edge (HTTPS) -> tunnel `selfhosted` (`ab4001da-dc93-4228-9fa3-6790300afb97`,
 connector = `redroid-cloudflared` container) -> `http://192.168.50.211:80` (Nginx Proxy Manager,
-proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.211:3160`.
+proxy host id **28**, no access list; the old list id **2** "Aggregator" still exists, unused) -> `http://192.168.50.211:3160`.
 
 - Same pattern as EquipmentMgr: proxied CNAME `search.selfhosted.vip` -> `<tunnel id>.cfargotunnel.com`,
   ingress rule placed before the `http_status:404` catch-all, NPM host with **no certificate and
   Force SSL off** (the tunnel speaks plain HTTP to NPM; Force SSL would loop).
-- Login: username/password in `.access_password` (mode 600, excluded from Docker builds).
-  Change it in NPM -> Access Lists -> Aggregator.
+- Old basic-auth login is in `.access_password` (mode 600). To put it back: NPM host 28 -> Access List -> Aggregator.
 - Credentials are not stored here. NPM admin password: `/home/pi/Claude/HeroBuilder/.npm_admin_password`.
   Cloudflare API token: the DNS-challenge credential stored in NPM's
   `/portainer/Files/AppData/Config/nginx-proxy-manager/data/database.sqlite`. Account id
@@ -92,9 +92,45 @@ proxy host id **28**, access list id **2** "Aggregator") -> `http://192.168.50.2
   and restore the pg_hba backup (then set `DB_SSL=disable` here).
 - Public site: `PUBLIC_URL=https://search.selfhosted.vip`, `REQUIRE_HTTPS=true` (LAN http redirects
   there; localhost exempt for the health check). WebAuthn RP id = that hostname, so passkeys made
-  there only work there. NPM basic auth is still in front of everything.
+  there only work there. `REQUIRE_LOGIN=true`: search and thumbnails need a signed-in session.
 - Rate limits are in memory (per process): register 5/10 min, login 10/min per IP; accounts lock
   for 15 min after 8 wrong passwords. Sensitive changes need a "confirm it's you" within 15 min.
 - OAuth providers: none configured yet. Redirect URLs: `<PUBLIC_URL>/api/auth/oauth/<provider>/callback`.
   Accounts are never auto-linked by email (takeover risk): link from the Security tab.
 - Tests used throwaway accounts on the live database and deleted them; 0 users after testing.
+
+## Performer / channel dropdowns — added 2026-10-17
+
+- Backend `aggregator/directory.py`, endpoint `/api/suggest?kind=performer|channel&q=&offset=&limit=`
+  (login-gated like search). UI `static/combo.js` (+ `.combo*` styles); the dropdown lists are
+  `#actor-suggest` / `#channel-suggest` (`#channel-list` is the sidebar facet list).
+- Sources: Pornhub `/webmasters/stars_detailed` (every performer, one 8 MB JSON; entries with 0 videos
+  dropped), top 20 pages of xHamster `/pornstars` + `/channels` (`window.initials`), top 15 pages of
+  XVideos `/pornstars-index/N` (image is inside a `document.write` script), all of Pornhub
+  `/channels?o=rk&page=N` (36/page, ~56 pages, 404 at the end). Merged by normalised name.
+- Rebuilt daily in the background (~75 s); cached as `aggregator-directory-v1.json` in `DIRECTORY_DIR`
+  (`/data`, Docker volume `aggregator-data`). A failed list retries after 1 h and a build less than
+  half the previous size is discarded.
+- Pornhub throttles bursts with a ~1.4 KB HTML stub (HTTP 200, no cards): channel pages are fetched one
+  at a time with retries, and the crawl aborts when a page stays blocked. Repeated full crawls while
+  testing got this IP blocked for a while — test against the cached file instead.
+
+## Favorite performers — added 2026-10-17
+
+- Stored as `favorites: [{name, thumb}]` inside the normal settings blob (`agg-settings-v1` in
+  localStorage, synced encrypted via `/api/me/settings`; `SETTINGS_MAX` raised to 256 KB, UI caps at 300).
+  No new table. Logic: `favs` / `window.AggFavs` + `renderFavs()` in `static/app.js`; stars and the
+  Favorites section of the dropdown in `static/combo.js`.
+- Sync rules (`pullSettings` in `static/auth.js`): every page load of a signed-in device pulls the
+  account copy (account wins, page reloads if it differs). Only right after signing in are this
+  device's favorites merged in (union), so favorites starred while signed out survive but removals
+  made on another device are not undone.
+
+## Static files and caching — 2026-10-17
+
+- Cloudflare caches `.js`/`.css` at the edge (and forces `max-age=14400` on them). That once served a
+  new `index.html` with an old `app.js`, so new features silently did nothing. Now `/` is rendered by
+  `_index_html()` in `aggregator/app.py`, which appends `?v=<sha256 prefix>` to every `"/static/…"`
+  reference; versioned files get `immutable`, everything else `no-cache`. Reference new static files
+  from `index.html` as `"/static/name"` and they're versioned automatically.
+- `sw.js` loads the page network-first (cache only offline); bump `CACHE` when changing `sw.js` itself.

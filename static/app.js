@@ -26,6 +26,7 @@ const els = {
   form: $("search-form"), q: $("q"), actor: $("actor"), channel: $("channel"), tags: $("tags"),
   channelFind: $("channel-find"), channelList: $("channel-list"), channelActive: $("channel-active"),
   blockedWrap: $("blocked-wrap"), blockedList: $("blocked-list"),
+  favWrap: $("fav-wrap"), favList: $("fav-list"), favCount: $("fav-count"),
   lenMin: $("len-min"), lenMax: $("len-max"), lenMinLabel: $("len-min-label"), lenMaxLabel: $("len-max-label"),
   fill: $("range-fill"), exclude: $("exclude"), strict: $("strict"), sources: $("sources"),
   sort: $("sort"), depth: $("depth"), summary: $("summary"), grid: $("grid"), more: $("load-more"),
@@ -62,7 +63,7 @@ function saveSettings() {
       min: +els.lenMin.value, max: +els.lenMax.value, exclude: els.exclude.value,
       strict: els.strict.checked, sort: els.sort.value, depth: els.depth.value,
       sourcesOff: Object.keys(SOURCES).filter((n) => !enabledSources().includes(n)),
-      blocked: [...state.blocked], autoplay: els.autoplay.checked,
+      blocked: [...state.blocked], autoplay: els.autoplay.checked, favorites: favs.list,
     }));
   } catch { /* storage unavailable: settings just won't persist */ }
   window.AggAuth?.settingsChanged(); // signed in: sync to the account (encrypted server-side)
@@ -124,6 +125,7 @@ async function search({ append = false } = {}) {
 
   const seq = ++state.searchSeq;
   state.loading = true;
+  if (!append) { state.searchedActor = params.actor; renderFavs(); } // highlight the performer being searched
   if (!append) {
     state.page = 0; state.videos = []; state.sourceStatus = {}; state.selected.clear(); state.exhausted = false;
     els.grid.innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join("");
@@ -346,7 +348,18 @@ function card(v) {
   for (const m of meta) metaEl.appendChild(Object.assign(document.createElement("span"), { textContent: m }));
 
   const chips = node.querySelector(".chips");
-  for (const a of v.actors) chips.appendChild(chip(a, "actor", () => { els.actor.value = a; search(); }));
+  for (const a of v.actors) {
+    const c = chip(a, "actor", () => { els.actor.value = a; search(); });
+    c.dataset.name = a;
+    c.classList.toggle("fav", favs.has(a));
+    const star = document.createElement("span");
+    star.className = "chip-star";
+    star.setAttribute("aria-hidden", "true"); // keyboard / screen readers: the ☆ in the Performer box does the same
+    star.title = "Favorite / unfavorite";
+    star.addEventListener("click", (e) => { e.stopPropagation(); favs.toggle(a); });
+    c.prepend(star);
+    chips.appendChild(c);
+  }
   for (const t of v.tags.slice(0, 6)) chips.appendChild(chip(t, "", () => addTag(t)));
 
   // Click the thumbnail to watch in the site's own embed player.
@@ -480,6 +493,76 @@ function closePlayer() {
   if (els.player.open) els.player.close();
 }
 
+/* ---------- favorite performers ---------- */
+// Saved with the other settings (so they sync, encrypted, when signed in).
+// combo.js uses window.AggFavs for the stars and the Favorites section of the dropdown.
+const FAV_MAX = 300;
+const favKey = (name) => chKey(name);
+const favs = {
+  list: [], // [{ name, thumb }], alphabetical
+  has(name) { const k = favKey(name); return !!k && this.list.some((f) => favKey(f.name) === k); },
+  async toggle(name, thumb = "") {
+    name = name.trim();
+    if (!name) return false;
+    const k = favKey(name);
+    if (this.has(name)) {
+      this.list = this.list.filter((f) => favKey(f.name) !== k);
+    } else {
+      if (this.list.length >= FAV_MAX) { alert(`You can keep up to ${FAV_MAX} favorites.`); return false; }
+      this.list = [...this.list, { name, thumb }].sort((a, b) => a.name.localeCompare(b.name));
+      if (!thumb) this.fillThumb(name); // starred from a card or a typed name
+    }
+    this.changed();
+    return this.has(name);
+  },
+  // Use the directory's spelling and picture when the name is listed there.
+  async fillThumb(name) {
+    try {
+      const res = await fetch("/api/suggest?" + new URLSearchParams({ kind: "performer", q: name, limit: 5 }));
+      const hit = res.ok && (await res.json()).items.find((i) => favKey(i.name) === favKey(name));
+      const f = hit && this.list.find((x) => favKey(x.name) === favKey(name));
+      if (f) { f.name = hit.name; f.thumb = hit.thumb; this.changed(); }
+    } catch { /* keep the initials */ }
+  },
+  changed() { saveSettings(); renderFavs(); },
+};
+window.AggFavs = favs;
+
+function favPic(f) {
+  const pic = document.createElement("span");
+  pic.className = "fav-pic";
+  pic.textContent = f.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  if (f.thumb) {
+    const img = Object.assign(document.createElement("img"), { src: f.thumb, alt: "", loading: "lazy", referrerPolicy: "no-referrer" });
+    img.addEventListener("error", () => img.remove());
+    pic.appendChild(img);
+  }
+  return pic;
+}
+
+function renderFavs() {
+  const current = favKey(state.searchedActor || "");
+  els.favCount.textContent = favs.list.length ? `(${favs.list.length})` : "";
+  els.favList.replaceChildren(...(favs.list.length ? favs.list.map((f) => {
+    const tile = document.createElement("div");
+    tile.className = "fav" + (favKey(f.name) === current ? " active" : "");
+    const go = Object.assign(document.createElement("button"), { type: "button", className: "fav-go", title: `Search ${f.name}` });
+    go.append(favPic(f), Object.assign(document.createElement("span"), { className: "fav-name", textContent: f.name }));
+    go.addEventListener("click", () => {
+      els.actor.value = f.name; saveSettings(); search();
+      if (isMobile()) closeSheet();
+    });
+    const rm = Object.assign(document.createElement("button"), { type: "button", className: "fav-rm", textContent: "✕", title: `Remove ${f.name} from favorites` });
+    rm.setAttribute("aria-label", rm.title);
+    rm.addEventListener("click", () => favs.toggle(f.name));
+    tile.append(go, rm);
+    return tile;
+  }) : [Object.assign(document.createElement("p"), { className: "hint", textContent: "Tap ☆ next to a performer (in the Performer dropdown or on a video) to keep them here." })]));
+  // Stars on the video cards and in the Performer box.
+  for (const c of document.querySelectorAll(".chip.actor")) c.classList.toggle("fav", favs.has(c.dataset.name));
+  window.dispatchEvent(new Event("favchange"));
+}
+
 /* ---------- init ---------- */
 function init() {
   try {
@@ -504,6 +587,10 @@ function init() {
     els.sources.appendChild(label);
   }
   for (const [k, name] of s.blocked || []) state.blocked.set(k, name);
+  favs.list = (Array.isArray(s.favorites) ? s.favorites : [])
+    .filter((f) => f && typeof f.name === "string" && f.name.trim())
+    .map((f) => ({ name: f.name, thumb: typeof f.thumb === "string" && /^(https:|\/api\/thumb)/.test(f.thumb) ? f.thumb : "" }));
+  renderFavs();
   els.lenMin.value = s.min ?? 5;
   els.lenMax.value = s.max ?? SLIDER_MAX;
   els.exclude.value = s.exclude ?? DEFAULT_EXCLUDE;
