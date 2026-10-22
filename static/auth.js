@@ -638,7 +638,23 @@
       sec("Performer & channel lists", `${dir.performers.toLocaleString()} performers, ${dir.channels.toLocaleString()} channels · built ${ago(dir.built)}` +
         (dir.last_errors?.length ? ` · last build had problems: ${dir.last_errors.join("; ")}` : ""), h("div", { class: "row-actions" }, rebuild)),
       sec("Background jobs", `Favorites feed: ${d.feed.names} names tracked, ${d.feed.queued} waiting, ${d.feed.checked_24h} checked in 24 h · ${d.alerts} saved-search alert(s).`),
-      sec("Plug-ins", `Folder: ${d.plugins_dir}. Files there are loaded at start-up; restart the app after adding one.`,
+      sec("Optional plug-ins", "Bundled with the app and off until switched on here. Sites appear in Sources after a page reload; " +
+        "destinations appear in everyone's Profile → Send to & notifications.",
+        ...["source", "target"].map((kind) => {
+          const list = d.bundled.filter((p) => p.kind === kind);
+          return list.length ? h("div", {}, h("h4", { class: "sub-head", text: kind === "source" ? "Sites" : "Destinations & notifications" }),
+            h("ul", { class: "item-list compact" }, list.map((p) => {
+              const box = h("input", { type: "checkbox", checked: p.enabled, disabled: !!p.error || p.overridden, "aria-label": `Enable ${p.label}` });
+              box.addEventListener("change", async () => {
+                try { await api("POST", "/api/admin/plugins", { id: p.id, enabled: box.checked }); kindsCache = null; await refreshMe(); toast(`${p.label} ${box.checked ? "on" : "off"}.`); }
+                catch (x) { box.checked = !box.checked; toast(x.message, true); }
+              });
+              return h("li", {}, h("label", { class: "plugin-row" }, box,
+                h("span", { class: "item-main" }, h("strong", { text: p.label }),
+                  h("span", { class: "hint", text: p.error ? `Failed to load: ${p.error}` : p.overridden ? "Replaced by your own plug-in of the same name." : p.description }))));
+            }))) : null;
+        })),
+      sec("Your own plug-ins", `Folder: ${d.plugins_dir}. Files there are loaded at start-up; restart the app after adding one.`,
         d.plugins.length ? h("ul", { class: "item-list compact" }, d.plugins.map((p) => h("li", {},
           h("div", { class: "item-main" }, h("strong", { text: `${p.kind}: ${p.name || p.file}` }),
             h("span", { class: "hint", text: p.ok ? `${p.file} · loaded` : `${p.file} · failed: ${p.error}` }))))) : h("p", { class: "hint", text: "None installed." })),

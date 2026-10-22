@@ -506,3 +506,6 @@ button.busy { opacity: .6; cursor: progress; }
 .mobile .dup { min-height: 0; padding: 2px 8px; font-size: 12px; }
 .views .wide-only { margin-left: -2px; }
 .chips .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-head { margin: 12px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.plugin-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; width: 100%; }
+.plugin-row input { width: auto; margin-top: 3px; }

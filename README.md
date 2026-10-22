@@ -105,17 +105,40 @@ listed in `SEND_PRIVATE_HOSTS`. Only video pages of the supported sites can be s
 Accounts whose email is listed in `ADMIN_EMAILS` get an **Admin** tab: all accounts (sign them out
 or delete them), a switch for open sign-ups (overrides `ALLOW_REGISTRATION`), each site's health over
 the last 24 hours (successes, failures, speed, last error), the performer/channel lists (with
-*Rebuild now*), the background jobs, and the plug-ins that loaded or failed.
+*Rebuild now*), the background jobs, switches for the optional plug-ins, and your own plug-ins (loaded or failed).
 
 <img src="docs/screenshots/admin.jpg" width="560" alt="Admin tab: sign-ups and site health">
 
 ## Plug-ins
 
+### Optional plug-ins (bundled)
+
+These ship with the app and are **off** until an admin switches them on in **Account → Admin →
+Optional plug-ins** (takes effect at once), or lists them in `ENABLED_PLUGINS` (e.g.
+`ENABLED_PLUGINS=telegram,gotify,tnaflix`; the admin page's choice wins once it has been used).
+
+| Plug-in | Kind | What it adds |
+|---|---|---|
+| `tnaflix` | Site | TNAFlix search: length filter, uploader, views, rating, hover previews, embedded player |
+| `empflix` | Site | EMPFlix (same platform as TNAFlix) |
+| `drtuber` | Site | DrTuber search: rating, hover previews, embedded player |
+| `telegram` | Send to + alerts | A Telegram bot posts the video link or alert to your chat |
+| `gotify` | Send to + alerts | Push notification from your Gotify server; tapping opens the link |
+| `pushover` | Send to + alerts | Push notification through Pushover |
+| `apprise` | Send to + alerts | Your Apprise API server: email, Matrix, Slack, Signal, SMS and 100+ more |
+| `linkding` | Send to | Saves the video as an unread bookmark (with tags) in linkding |
+| `karakeep` | Send to | Saves the video link to Karakeep (formerly Hoarder) |
+
+Once a destination plug-in is on, every user can connect it in their Profile like the built-in ones.
+Their code lives in [`plugins-available/`](plugins-available/), and is a good starting point for your own.
+
+### Your own plug-ins
+
 Extra sites and extra "Send to" destinations can be added without rebuilding the image: put Python
 files in `plugins/sources/` or `plugins/targets/` (mounted at `/plugins`) and restart. A plug-in with
-the same name as a built-in site replaces it — handy when a site changes its layout. Templates and
-instructions are in [`plugins-example/`](plugins-example/). Plug-ins run inside the server with full
-access to it: only install code you trust.
+the same name as a built-in or bundled one replaces it — handy when a site changes its layout.
+Templates and instructions are in [`plugins-example/`](plugins-example/). Plug-ins run inside the
+server with full access to it: only install code you trust.
 
 ## Phones and tablets
 
@@ -161,6 +184,7 @@ filters, hidden channels and source choices across devices.
 | `ADMIN_EMAILS` | Comma-separated emails of accounts that get the Admin tab. |
 | `ALERT_HOURS` / `FEED_REFRESH_HOURS` | How often saved-search alerts and the favorites feed are checked (default 6). |
 | `PLUGINS_DIR` | Plug-in folder (default `/plugins`). |
+| `ENABLED_PLUGINS` | Bundled optional plug-ins to switch on, comma-separated (e.g. `telegram,gotify,tnaflix`). Once an admin changes them on the Admin tab, that choice is used instead. |
 | `GOOGLE_CLIENT_ID` / `_SECRET`, `FACEBOOK_…`, `DISCORD_…` | Optional providers. |
 
 Provider redirect URL to register: `<PUBLIC_URL>/api/auth/oauth/<google|facebook|discord>/callback`

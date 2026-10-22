@@ -4,6 +4,7 @@ ADMIN_EMAILS; every endpoint re-checks that on each request.
 """
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
@@ -38,8 +39,11 @@ async def load_app_settings() -> None:
     """Runtime overrides saved from the admin page win over the environment."""
     async with db.pool.acquire() as c:
         v = await c.fetchval("SELECT value FROM app_settings WHERE key = 'allow_registration'")
+        enabled = await c.fetchval("SELECT value FROM app_settings WHERE key = 'enabled_plugins'")
     if v is not None:
         settings.allow_registration = v == "true"
+    if enabled is not None:  # switched on the admin page: replaces ENABLED_PLUGINS
+        plugins.set_enabled(json.loads(enabled))
 
 
 @router.get("/api/admin/overview")
@@ -71,6 +75,7 @@ async def overview(request: Request):
         "require_login": settings.require_login,
         "sites": health.report(SOURCES),
         "plugins": plugins.loaded,
+        "bundled": plugins.describe_bundled(),
         "plugins_dir": str(plugins.PLUGINS_DIR),
         "directory": {**directory.status, "performers": len(directory.performers.entries),
                       "channels": len(directory.channels.entries), "built": directory.performers.built},
@@ -89,6 +94,22 @@ async def set_registration(request: Request, body: dict = Body(...)):
     settings.allow_registration = on
     await log_event(s["user_id"], "admin_registration_" + ("opened" if on else "closed"), request)
     return {"ok": True, "registration": on}
+
+
+@router.post("/api/admin/plugins")
+async def set_plugin(request: Request, body: dict = Body(...)):
+    """Switch one bundled plug-in on or off; takes effect at once and survives restarts."""
+    await _admin(request)
+    pid = str(body.get("id") or "")
+    if pid not in plugins.bundled or plugins.bundled[pid]["module"] is None:
+        raise HTTPException(400, "Unknown or broken plug-in.")
+    current = {p for p, e in plugins.bundled.items() if e["enabled"]}
+    current = current | {pid} if body.get("enabled") else current - {pid}
+    enabled = plugins.set_enabled(current)
+    async with db.pool.acquire() as c:
+        await c.execute("""INSERT INTO app_settings (key, value) VALUES ('enabled_plugins', $1)
+                           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", json.dumps(enabled))
+    return {"ok": True, "enabled": enabled}
 
 
 @router.post("/api/admin/users/{uid}/signout")

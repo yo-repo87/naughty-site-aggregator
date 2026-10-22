@@ -163,3 +163,15 @@ proxy host id **28**, no access list; the old list id **2** "Aggregator" still e
   blockPerformers/Tags, hideWatched, mergeDups (`SETTINGS_MAX` 1 MB). The URL mirrors the current search.
 - Tested 2026-10-22 with a throwaway admin account and a local fake receiver (webhook/ntfy/JDownloader)
   plus a test source plug-in and a broken one; all removed afterwards (1 user, 1 target, 0 alerts left).
+
+## Bundled optional plug-ins — added 2026-10-22
+
+- `plugins-available/{sources,targets}/` (copied into the image): sites tnaflix, empflix (shared parser
+  `aggregator/sources/flix.py`), drtuber; targets telegram, gotify, pushover, apprise, linkding, karakeep.
+  Off by default. `plugins.set_enabled()` registers/unregisters them live; the admin switch stores the list
+  in `app_settings.enabled_plugins` (overrides env `ENABLED_PLUGINS`). Own plug-ins in `/plugins` with the
+  same name win.
+- Tested 2026-10-22: the three sites live; Gotify, linkding (needs a token from its newer ApiToken model)
+  and Apprise against throwaway local containers (removed, images deleted); Telegram/Pushover against the
+  real APIs with fake keys (error paths) plus captured request bodies; Karakeep request bodies only.
+  None are enabled on this server (the test's `enabled_plugins` row was deleted).

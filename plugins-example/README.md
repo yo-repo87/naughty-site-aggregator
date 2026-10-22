@@ -13,6 +13,9 @@ plugins/
 Plug-ins run inside the server with full access to it (its keys and database included).
 Only install code you have read and trust.
 
+The app also ships optional plug-ins in `plugins-available/` that an admin can switch on without
+copying anything (Account → Admin → Optional plug-ins); they are complete working examples too.
+
 Templates: `sources/example_site.py` and `targets/example_target.py` here. Copy one into your
 `plugins/` folder, rename it, and fill it in. The built-in adapters in `aggregator/sources/` and
 targets in `aggregator/targets/` are the best worked examples.
