@@ -34,6 +34,19 @@ box itself. Favorites appear at the top of the dropdown and in a "Favorite perfo
 top of the filters panel; one click searches that performer. They are saved with the other
 settings: in the browser, and, when signed in, synced (encrypted) to the account.
 
+## Send to MeTube (optional, per account)
+
+Each signed-in user can connect their own [MeTube](https://github.com/alexta69/metube) in
+**Account → Profile → MeTube**: its address plus, if it sits behind a login (e.g. an Nginx Proxy
+Manager access list), a username and password. Saving checks the connection first. Once connected,
+every video gets a **Download** button that opens MeTube's usual choices (Type, Codec, Format,
+Quality) and sends the video to that user's MeTube; users without a MeTube never see the button.
+The settings are stored encrypted with the account (the password is never sent back to the browser)
+and can be changed or disconnected at any time.
+
+The server relays the request, so MeTube can be plain HTTP. For safety it only talks to public
+addresses; to allow a MeTube on your LAN, list it in `METUBE_PRIVATE_HOSTS`.
+
 ## Phones and tablets
 
 Phones, tablets (touch without a mouse) and narrow windows get a mobile layout automatically;
@@ -74,6 +87,7 @@ filters, hidden channels and source choices across devices.
 | `REQUIRE_HTTPS` | `true` redirects any other address to `PUBLIC_URL`. |
 | `REQUIRE_LOGIN` | `true` means searching needs an account. |
 | `ALLOW_REGISTRATION` | `false` stops new sign-ups. |
+| `METUBE_PRIVATE_HOSTS` | LAN MeTube addresses users may connect, comma-separated `host`, `host:port` or CIDR (e.g. `192.168.1.10:8081`). Empty = public addresses only. Anyone who can register can make the server contact these, so list only what you need. |
 | `GOOGLE_CLIENT_ID` / `_SECRET`, `FACEBOOK_…`, `DISCORD_…` | Optional providers. |
 
 Provider redirect URL to register: `<PUBLIC_URL>/api/auth/oauth/<google|facebook|discord>/callback`
@@ -112,6 +126,7 @@ Videos are never relayed.
 `GET /api/search?q=&actor=&channel=&tags=a,b&min_sec=&max_sec=&sources=pornhub,xvideos,...&page=1&pages=2`
 (`sources` defaults to all twelve)
 
+`POST /api/metube/add` `{url, download_type, codec, format, quality}` (signed in, MeTube connected)
 `GET /api/suggest?kind=performer|channel&q=&offset=0&limit=30` (dropdown entries; empty `q` = everyone by popularity)
 
 ## Caveats

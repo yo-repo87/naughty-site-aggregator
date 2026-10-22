@@ -134,3 +134,17 @@ proxy host id **28**, no access list; the old list id **2** "Aggregator" still e
   reference; versioned files get `immutable`, everything else `no-cache`. Reference new static files
   from `index.html` as `"/static/name"` and they're versioned automatically.
 - `sw.js` loads the page network-first (cache only offline); bump `CACHE` when changing `sw.js` itself.
+
+## MeTube per user — added 2026-10-22
+
+- Optional per account, edited in Account → Profile (`metubeCard` / `sendToMeTube` in `static/auth.js`).
+  Backend `aggregator/auth/metube.py`: `GET/PUT/DELETE /api/me/metube`, `POST /api/metube/add`. Stored as
+  `users.metube_enc` (`{url, username, password}`, AES-GCM, added with `ALTER TABLE … IF NOT EXISTS`);
+  `/api/me` returns `metube: bool`, which sets `body.has-metube` and so shows the cards' `.dl-btn`.
+- The server relays to MeTube (`POST <url>/add`, MeTube ≥ 2026 API: `download_type`, `codec`, `format`,
+  `quality`; save checks `GET <url>/version`). SSRF fence: redirects off, connection pinned to the
+  resolved IP (CurlOpt.RESOLVE), non-public IPs refused unless in `METUBE_PRIVATE_HOSTS` (unset here —
+  the owner's MeTube is used via its public URL `https://metube.selfhosted.vip`, NPM host 27, access
+  list 1 basic auth), only video URLs of the 12 sites. Changing the address/username drops the saved password.
+- Tested on 2026-10-22 against the local MeTube with `METUBE_PRIVATE_HOSTS` set temporarily (then removed);
+  the test entry and file were deleted from MeTube and the throwaway account deleted.

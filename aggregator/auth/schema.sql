@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at       timestamptz NOT NULL DEFAULT now(),
     last_login_at    timestamptz
 );
+-- Added later: the user's MeTube connection (JSON: url, username, password).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS metube_enc bytea;
 CREATE UNIQUE INDEX IF NOT EXISTS users_webauthn_handle ON users (webauthn_handle);
 
 CREATE TABLE IF NOT EXISTS sessions (

@@ -419,7 +419,7 @@ async def me(request: Request):
         return {"user": None}
     u = await _user(s["user_id"])
     return {"user": {"name": _name(u), "email": _email(u), "has_password": u["password_hash"] is not None,
-                     "created_at": u["created_at"].isoformat()}}
+                     "created_at": u["created_at"].isoformat(), "metube": u["metube_enc"] is not None}}
 
 
 @router.patch("/api/me")

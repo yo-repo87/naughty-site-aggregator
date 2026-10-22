@@ -361,6 +361,8 @@ function card(v) {
     chips.appendChild(c);
   }
   for (const t of v.tags.slice(0, 6)) chips.appendChild(chip(t, "", () => addTag(t)));
+  // Shown only once the account has a MeTube set up (body.has-metube, auth.js).
+  node.querySelector(".dl-btn").addEventListener("click", () => window.AggAuth?.sendToMeTube(v));
 
   // Click the thumbnail to watch in the site's own embed player.
   thumb.addEventListener("click", (e) => {

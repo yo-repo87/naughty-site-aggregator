@@ -97,6 +97,7 @@
     const slot = document.getElementById("account-slot");
     if (!slot) return;
     slot.replaceChildren();
+    document.body.classList.toggle("has-metube", !!(cfg.enabled && me?.metube)); // shows the cards' Download buttons
     if (!cfg.enabled) return;
     if (me) {
       const initial = (me.name || me.email || "?").trim()[0]?.toUpperCase() || "?";
@@ -363,6 +364,7 @@
           await api("POST", "/api/auth/logout").catch(() => {}); me = null; renderAccountButton();
           document.querySelector("dialog.modal")?.close(); toast("Signed out.");
         } })),
+      await metubeCard(refresh).catch(() => null),
       h("section", { class: "danger" },
         h("h3", { text: "Delete account" }),
         h("p", { class: "hint", text: "Permanently deletes your account, keys, sign-in history and saved settings. This can't be undone." }),
@@ -371,6 +373,100 @@
           try { await guarded(() => api("DELETE", "/api/me")); me = null; renderAccountButton(); document.querySelector("dialog.modal")?.close(); toast("Account deleted."); }
           catch (x) { toast(x.message, true); }
         } })));
+  }
+
+  /* ---------- MeTube (optional, per account) ---------- */
+  async function metubeCard(refresh) {
+    const cur = await api("GET", "/api/me/metube");
+    const err = errLine();
+    const url = h("input", { type: "url", value: cur.url || "", placeholder: "https://metube.example.com", required: true, maxlength: 300, autocomplete: "off", spellcheck: "false" });
+    const user = h("input", { type: "text", value: cur.username || "", maxlength: 200, autocomplete: "off", spellcheck: "false" });
+    const pass = h("input", { type: "password", maxlength: 500, autocomplete: "new-password",
+      placeholder: cur.has_password ? "Saved — leave blank to keep it" : "" });
+    const save = h("button", { type: "submit", class: "primary", text: cur.configured ? "Save" : "Connect MeTube" });
+    return h("section", { class: "sec-card" },
+      h("h3", {}, "MeTube", cur.configured ? h("span", { class: "badge-on", text: "Connected" }) : null),
+      h("p", { class: "hint", text: "Optional. Connect your own MeTube and every video gets a Download button that sends it there. " +
+        "Only you use this connection; the password is stored encrypted and never shown again." }),
+      h("form", { class: "auth-form", onsubmit: async (e) => {
+        e.preventDefault(); showErr(err); busy(save, true);
+        try {
+          const r = await api("PUT", "/api/me/metube", { url: url.value, username: user.value, password: pass.value });
+          await refreshMe(); toast(`MeTube connected (version ${r.version}).`); refresh();
+        } catch (x) { showErr(err, x.message); } finally { busy(save, false); }
+      } },
+        field("MeTube address", url),
+        h("div", { class: "metube-opts" },
+          field("Username (if your MeTube has a login)", user),
+          field("Password", pass)),
+        err,
+        h("div", { class: "row-actions" }, save,
+          cur.configured ? h("button", { type: "button", class: "btn danger-btn", text: "Disconnect", onclick: async () => {
+            if (!confirm("Disconnect MeTube? The Download buttons will disappear.")) return;
+            try { await api("DELETE", "/api/me/metube"); await refreshMe(); toast("MeTube disconnected."); refresh(); }
+            catch (x) { toast(x.message, true); }
+          } }) : null)));
+  }
+
+  // Same choices as MeTube's own form.
+  const MT = {
+    types: [["video", "Video"], ["audio", "Audio"], ["captions", "Captions"], ["thumbnail", "Thumbnail"]],
+    codecs: [["auto", "Auto"], ["h264", "H.264"], ["h265", "H.265 (HEVC)"], ["av1", "AV1"], ["vp9", "VP9"]],
+    formats: {
+      video: [["any", "Auto"], ["mp4", "MP4"], ["ios", "iOS Compatible"]],
+      audio: [["m4a", "M4A"], ["mp3", "MP3"], ["opus", "OPUS"], ["wav", "WAV"], ["flac", "FLAC"]],
+      captions: [["srt", "SRT"], ["txt", "TXT (Text only)"], ["vtt", "VTT"], ["ttml", "TTML"]],
+      thumbnail: [["jpg", "JPG"]],
+    },
+    quality(type, format) {
+      if (type === "video") return [["best", "Best"], ...["2160", "1440", "1080", "720", "480", "360", "240"].map((q) => [q, q + "p"]), ["worst", "Worst"]];
+      if (type === "audio" && format === "mp3") return [["best", "Best"], ["320", "320 kbps"], ["192", "192 kbps"], ["128", "128 kbps"]];
+      if (type === "audio" && format === "m4a") return [["best", "Best"], ["192", "192 kbps"], ["128", "128 kbps"]];
+      return [["best", "Best"]];
+    },
+  };
+  const MT_KEY = "agg-metube-opts";
+
+  function sendToMeTube(v) {
+    if (!me?.metube) return;
+    let last = {};
+    try { last = JSON.parse(localStorage.getItem(MT_KEY)) || {}; } catch {}
+    const sel = () => h("select", {});
+    const type = sel(), codec = sel(), format = sel(), quality = sel();
+    const fill = (el, opts, want) => {
+      el.replaceChildren(...opts.map(([id, text]) => h("option", { value: id, text })));
+      el.value = opts.some(([id]) => id === want) ? want : opts[0][0];
+    };
+    const codecField = field("Codec", codec), qualityField = field("Quality", quality);
+    const sync = (keep = {}) => {
+      fill(format, MT.formats[type.value], keep.format ?? format.value);
+      fill(quality, MT.quality(type.value, format.value), keep.quality ?? quality.value);
+      codecField.hidden = type.value !== "video";
+      qualityField.hidden = quality.options.length < 2;
+    };
+    fill(type, MT.types, last.download_type || "video");
+    fill(codec, MT.codecs, last.codec || "auto");
+    sync({ format: last.format || "any", quality: last.quality || "best" });
+    type.addEventListener("change", () => sync());
+    format.addEventListener("change", () => sync({ format: format.value }));
+
+    const m = modal("Download with MeTube");
+    const err = errLine();
+    const go = h("button", { type: "submit", class: "primary wide", text: "Download" });
+    m.body.append(
+      h("p", { class: "metube-video", text: v.title }),
+      h("form", { class: "auth-form", onsubmit: async (e) => {
+        e.preventDefault(); showErr(err); busy(go, true); go.textContent = "Sending to MeTube…";
+        const opts = { download_type: type.value, codec: codec.value, format: format.value, quality: quality.value };
+        try {
+          const r = await api("POST", "/api/metube/add", { url: v.url, ...opts });
+          try { localStorage.setItem(MT_KEY, JSON.stringify(opts)); } catch {}
+          m.dlg.close(); toast(r.message || "Sent to MeTube. It's downloading there now.");
+        } catch (x) { showErr(err, x.message); go.textContent = "Download"; } finally { busy(go, false); }
+      } },
+        h("div", { class: "metube-opts" }, field("Type", type), codecField, field("Format", format), qualityField),
+        err, go));
+    go.focus();
   }
 
   function showBackupCodes(codes, title = "Save your backup codes") {
@@ -535,6 +631,7 @@
 
   window.AggAuth = {
     settingsChanged() { if (!me) return; clearTimeout(syncTimer); syncTimer = setTimeout(pushSettings, 1500); },
+    sendToMeTube,
     requireLogin() { if (cfg.enabled && !me && !document.querySelector("dialog.modal")) openSignIn(); },
   };
 

@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import directory
-from .auth import db as auth_db, routes as auth_routes, web as auth_web
+from .auth import db as auth_db, metube as auth_metube, routes as auth_routes, web as auth_web
 from .auth.config import settings as auth_settings
 from .sources import SOURCES
 from .sources.base import Query, Video, session
@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Naughty Site Aggregator", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 auth_web.install(app)
 app.include_router(auth_routes.router)
+app.include_router(auth_metube.router)
 
 
 async def _fetch_page(name: str, q: Query) -> list[Video]:
