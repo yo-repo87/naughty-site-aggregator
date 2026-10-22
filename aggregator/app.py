@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import directory, feed, plugins
-from .auth import admin as auth_admin, alerts as auth_alerts, db as auth_db, routes as auth_routes, send as auth_send, web as auth_web
+from .auth import admin as auth_admin, alerts as auth_alerts, db as auth_db, downloads as auth_downloads, routes as auth_routes, send as auth_send, web as auth_web
 from .auth.config import settings as auth_settings
 from .searching import fetch_source
 from .sources import SOURCES
@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(directory.keep_fresh()), asyncio.create_task(feed.worker())]
     if auth_settings.enabled:
         tasks.append(asyncio.create_task(auth_alerts.loop()))
+        tasks.append(asyncio.create_task(auth_downloads.loop()))
     yield
     for t in tasks:
         t.cancel()
@@ -58,7 +59,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Naughty Site Aggregator", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 auth_web.install(app)
 app.include_router(auth_routes.router)
-for module in (auth_send, auth_alerts, auth_admin):
+for module in (auth_send, auth_alerts, auth_admin, auth_downloads):
     app.include_router(module.router)
 
 

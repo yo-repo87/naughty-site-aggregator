@@ -91,6 +91,12 @@ Saving tests the connection first. Once something that takes videos is connected
 a **Download** button (and select mode a *Send* button).
 
 ![Download dialog with MeTube's options](docs/screenshots/send.jpg)
+
+**Download updates:** below the list, pick where to be told about downloads (Gotify, ntfy, Discord,
+Telegram, Pushover, Apprise or a webhook) and tick *when a download starts* and/or *when it finishes or
+fails*. "Started" goes out as soon as the destination accepts the video (several sends in a row become
+one message). For MeTube the server then checks every minute — also with the page closed, for up to
+two days — and reports "finished" (linking to your MeTube) or "failed" with MeTube's error.
  Secrets (passwords, tokens, the Discord
 webhook URL) are stored encrypted and never sent back to the browser; leaving one blank when editing
 keeps it only while the address stays on the same server.

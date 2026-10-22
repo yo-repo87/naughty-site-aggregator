@@ -124,3 +124,17 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key   text PRIMARY KEY,
     value text NOT NULL
 );
+
+-- Download updates: where to notify when a sent video starts / finishes (Profile tab).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS dl_notify_target uuid REFERENCES user_targets ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS dl_notify_events text;   -- "start", "finish" or "start,finish"
+
+-- Videos sent to a target that reports progress (MeTube), watched until done.
+CREATE TABLE IF NOT EXISTS download_watches (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    target_id   uuid NOT NULL REFERENCES user_targets ON DELETE CASCADE,
+    data_enc    bytea NOT NULL,                -- {url, title}
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS download_watches_user ON download_watches (user_id);

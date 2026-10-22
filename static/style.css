@@ -509,3 +509,4 @@ button.busy { opacity: .6; cursor: progress; }
 .sub-head { margin: 12px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .plugin-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; width: 100%; }
 .plugin-row input { width: auto; margin-top: 3px; }
+.dl-updates { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }

@@ -405,6 +405,7 @@
           if (!confirm(`Remove ${t.name}?`)) return;
           try { await api("DELETE", `/api/me/targets/${t.id}`); await refreshMe(); toast("Removed."); refresh(); } catch (x) { toast(x.message, true); }
         } }))))) : null;
+    const updates = await downloadUpdatesRow(targets).catch(() => null);
     const pick = h("select", { "aria-label": "Add a destination" }, h("option", { value: "", text: "＋ Add…" }),
       kinds.map((k) => h("option", { value: k.kind, text: k.label })));
     pick.addEventListener("change", () => { const k = kinds.find((x) => x.kind === pick.value); pick.value = ""; if (k) targetForm(k, null, refresh); });
@@ -412,7 +413,39 @@
       h("h3", {}, "Send to & notifications", targets.length ? h("span", { class: "badge-on", text: `${targets.length} connected` }) : null),
       h("p", { class: "hint", text: "Optional. Connect your own MeTube, JDownloader, webhook, Discord or ntfy. Videos then get a Download button, " +
         "and saved searches can notify you. Only you use these; passwords and tokens are stored encrypted and never shown again." }),
-      list, h("div", { class: "row-actions" }, pick));
+      list, h("div", { class: "row-actions" }, pick), updates);
+  }
+
+  // "Download updates": notify through Gotify / ntfy / … when a sent video starts and finishes.
+  async function downloadUpdatesRow(targets) {
+    const notifiers = targets.filter((t) => t.can_notify && t.available);
+    const senders = targets.filter((t) => t.can_send && t.available);
+    if (!notifiers.length || !senders.length) return null;
+    const cur = await api("GET", "/api/me/download-updates");
+    const via = h("select", { "aria-label": "Send download updates to" }, h("option", { value: "", text: "Off" }),
+      notifiers.map((t) => h("option", { value: t.id, text: t.name })));
+    via.value = cur.target_id || "";
+    const start = h("input", { type: "checkbox", checked: cur.events.includes("start") });
+    const finish = h("input", { type: "checkbox", checked: cur.events.includes("finish") });
+    const tracked = senders.filter((t) => t.has_status).map((t) => t.name);
+    const sync = () => { for (const b of [start, finish]) b.disabled = !via.value; };
+    const save = async () => {
+      sync();
+      if (via.value && !start.checked && !finish.checked) { start.checked = finish.checked = true; }
+      try {
+        await api("PUT", "/api/me/download-updates", { target_id: via.value || null, events: [start.checked && "start", finish.checked && "finish"].filter(Boolean) });
+        toast(via.value ? "Download updates saved." : "Download updates off.");
+      } catch (x) { toast(x.message, true); }
+    };
+    for (const el of [via, start, finish]) el.addEventListener("change", save);
+    sync();
+    return h("div", { class: "dl-updates" },
+      h("h4", { class: "sub-head", text: "Download updates" }),
+      h("p", { class: "hint", text: "Get a notification when a video you send with the Download button starts" +
+        (tracked.length ? `, and when it finishes or fails on ${tracked.join(" / ")} (checked every minute, even with this page closed).` : ".") }),
+      field("Notify me with", via),
+      h("label", { class: "check" }, start, " When a download starts"),
+      tracked.length ? h("label", { class: "check" }, finish, " When it finishes or fails") : null);
   }
 
   function targetForm(kind, existing, refresh) {

@@ -188,9 +188,15 @@ async def send(tid: UUID, request: Request, body: dict = Body(...)):
         allowed = {o["name"]: {c[0] for c in o.get("choices", [])} for o in m.OPTIONS}
         options = {k: str(v) for k, v in options.items() if k in allowed and str(v) in allowed[k]}
     try:
-        return {"ok": True, "message": await m.send(cfg, video, options)}
+        message = await m.send(cfg, video, options)
     except Errors as e:
         raise HTTPException(502, str(e)) from None
+    from . import downloads  # (imported here: downloads imports this module)
+    try:
+        await downloads.on_sent(s["user_id"], tid, video)
+    except Exception:  # an update that can't be queued must not fail the send itself
+        pass
+    return {"ok": True, "message": message}
 
 
 @router.post("/api/me/targets/{tid}/status")

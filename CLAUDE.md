@@ -175,3 +175,14 @@ proxy host id **28**, no access list; the old list id **2** "Aggregator" still e
   and Apprise against throwaway local containers (removed, images deleted); Telegram/Pushover against the
   real APIs with fake keys (error paths) plus captured request bodies; Karakeep request bodies only.
   None are enabled on this server (the test's `enabled_plugins` row was deleted).
+
+## Download updates — added 2026-10-22
+
+- `aggregator/auth/downloads.py`: per-user `users.dl_notify_target` / `dl_notify_events` ("start,finish");
+  `send.py` calls `downloads.on_sent()` after a successful send. "Started" is coalesced per user over 6 s;
+  "finish" creates a `download_watches` row (url/title sealed) when the target has `status()` (MeTube),
+  checked every 60 s by `downloads.loop()`, dropped after 2 days. MeTube `status()` now returns `added`
+  (its timestamp) so an older finished copy of the same URL isn't reported.
+- Tested 2026-10-22 with a throwaway account, a local fake ntfy and the owner's MeTube (thumbnail send →
+  "started" + "failed"; "finished" and coalescing via a patched status); MeTube entry/file, account and
+  temporary SEND_PRIVATE_HOSTS removed.

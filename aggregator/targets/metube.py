@@ -92,6 +92,8 @@ async def status(cfg: dict, urls: list[str]) -> dict:
             else:
                 st = "downloading" if where == "queue" and item.get("status") == "downloading" else "queued"
             pct = item.get("percent")
+            ts = item.get("timestamp")  # nanoseconds, when MeTube got it
             out[u] = {"status": st, "msg": str(item.get("msg") or "")[:200],
-                      "percent": round(pct) if isinstance(pct, (int, float)) else None}
+                      "percent": round(pct) if isinstance(pct, (int, float)) else None,
+                      "added": ts / 1e9 if isinstance(ts, (int, float)) else None}
     return out
