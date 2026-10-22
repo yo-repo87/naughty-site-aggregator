@@ -152,6 +152,8 @@ body.has-targets .dl-btn { display: inline-flex; }
 
 /* Performer / channel dropdowns (static/combo.js) */
 .combo { position: relative; min-width: 0; }
+.combo-field { position: relative; display: block; }
+.combo-field input { width: 100%; }
 .combo-list {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: max(100%, 380px);
   max-height: min(60vh, 460px); overflow-y: auto; overscroll-behavior: contain;
@@ -502,3 +504,5 @@ button.busy { opacity: .6; cursor: progress; }
 .mobile .views button { padding: 6px 12px; font-size: 14px; white-space: nowrap; }
 .mobile .select-toggle { padding: 6px 12px; }
 .mobile .dup { min-height: 0; padding: 2px 8px; font-size: 12px; }
+.views .wide-only { margin-left: -2px; }
+.chips .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

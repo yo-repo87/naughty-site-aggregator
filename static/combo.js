@@ -40,8 +40,13 @@
     const starrable = !!favs;
     const wrap = document.createElement("div");
     wrap.className = `combo combo-${kind}`;
+    // The box (and its ☆) sit in their own positioned field, so the ☆ stays inside the box
+    // even on phones, where the list is positioned against the whole top bar.
+    const fieldEl = document.createElement("span");
+    fieldEl.className = "combo-field";
     input.replaceWith(wrap);
-    wrap.appendChild(input);
+    fieldEl.appendChild(input);
+    wrap.appendChild(fieldEl);
     const list = document.createElement("ul");
     list.className = "combo-list";
     list.id = `${input.id}-suggest`;
@@ -60,7 +65,7 @@
       boxStar.classList.add("combo-boxstar");
       boxStar.tabIndex = 0;
       wrap.classList.add("has-star");
-      wrap.appendChild(boxStar);
+      fieldEl.appendChild(boxStar);
       const syncBox = () => {
         boxStar.dataset.name = input.value.trim();
         boxStar.hidden = !boxStar.dataset.name;

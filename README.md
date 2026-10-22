@@ -7,6 +7,16 @@ RedTube, Eporner, XNXX, xHamster, YouJizz, PornTrex and HQPorner. It fetches **m
 (titles, lengths, thumbnails, links). It never downloads or re-hosts any video.
 Videos play in each site's own embed player, or open on the site.
 
+![Search results with saved searches, favorite performers and channels, Watch later and Download buttons](docs/screenshots/results.jpg)
+
+<p align="center">
+  <img src="docs/screenshots/phone.jpg" width="260" alt="Phone layout">
+  &nbsp;
+  <img src="docs/screenshots/phone-filters.jpg" width="260" alt="Phone filter sheet">
+</p>
+
+<sub>Thumbnails in these screenshots are blurred on purpose; the app shows each site's real thumbnails.</sub>
+
 ## Run
 
 ```bash
@@ -39,6 +49,8 @@ server looks each name up in the background (every `FEED_REFRESH_HOURS`, default
 result between everyone who favorited it; the tab shows a badge with how many arrived since you
 last looked. Filter the feed by favorite with the chips above it.
 
+![New from favorites](docs/screenshots/feed.jpg)
+
 ## Your library
 
 - **Watch later:** 🕒 on a card saves it to the Watch later tab (up to 300).
@@ -59,6 +71,8 @@ last looked. Filter the feed by favorite with the chips above it.
 All of this is saved with the other settings: in the browser and, when signed in, synced (encrypted)
 to the account.
 
+![Select mode with the bulk bar](docs/screenshots/select.jpg)
+
 ## Send to & notifications (optional, per account)
 
 In **Account → Profile → Send to & notifications** each user can connect their own:
@@ -71,8 +85,13 @@ In **Account → Profile → Send to & notifications** each user can connect the
 | Discord | Posts the link to a channel webhook. Also receives alerts. |
 | ntfy | Push notification (ntfy.sh or self-hosted, optional token). Also receives alerts. |
 
+<img src="docs/screenshots/profile-send-to.jpg" width="560" alt="Send to & notifications in the Profile tab">
+
 Saving tests the connection first. Once something that takes videos is connected, every video gets
-a **Download** button (and select mode a *Send* button). Secrets (passwords, tokens, the Discord
+a **Download** button (and select mode a *Send* button).
+
+![Download dialog with MeTube's options](docs/screenshots/send.jpg)
+ Secrets (passwords, tokens, the Discord
 webhook URL) are stored encrypted and never sent back to the browser; leaving one blank when editing
 keeps it only while the address stays on the same server.
 
@@ -87,6 +106,8 @@ Accounts whose email is listed in `ADMIN_EMAILS` get an **Admin** tab: all accou
 or delete them), a switch for open sign-ups (overrides `ALLOW_REGISTRATION`), each site's health over
 the last 24 hours (successes, failures, speed, last error), the performer/channel lists (with
 *Rebuild now*), the background jobs, and the plug-ins that loaded or failed.
+
+<img src="docs/screenshots/admin.jpg" width="560" alt="Admin tab: sign-ups and site health">
 
 ## Plug-ins
 
