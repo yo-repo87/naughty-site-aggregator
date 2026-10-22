@@ -9,6 +9,7 @@ import json
 
 from .base import Query, Video, keywords, session
 
+SORTS = {"new"}
 NAME = "eporner"
 API = "https://www.eporner.com/api/v2/video/search/"
 PER_PAGE = 50
@@ -18,7 +19,7 @@ async def search(q: Query) -> list[Video]:
     kw = keywords(q)
     params = {
         "query": kw or "all", "page": q.page, "per_page": PER_PAGE, "format": "json",
-        "thumbsize": "big", "order": "most-popular" if kw else "top-weekly",
+        "thumbsize": "big", "order": "latest" if q.sort == "new" else "most-popular" if kw else "top-weekly",
     }
     async with session() as s:
         r = await s.get(API, params=params)

@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from .base import Query, Video, keywords, session
 
+SORTS = {"new"}
 NAME = "xhamster"
 BASE = "https://xhamster.com"
 MARKER = "window.initials="
@@ -21,6 +22,8 @@ async def search(q: Query) -> list[Video]:
     params: dict[str, int] = {}
     if q.page > 1:
         params["page"] = q.page
+    if q.sort == "new":
+        params["sort"] = "newest"
     if q.min_sec >= 60:
         params["min-duration"] = q.min_sec // 60
     if q.max_sec is not None:

@@ -15,27 +15,26 @@ import asyncio
 import hashlib
 import logging
 import re
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query as Q
+from fastapi import Body, FastAPI, HTTPException, Query as Q
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import directory
-from .auth import db as auth_db, metube as auth_metube, routes as auth_routes, web as auth_web
+from . import directory, feed, plugins
+from .auth import admin as auth_admin, alerts as auth_alerts, db as auth_db, routes as auth_routes, send as auth_send, web as auth_web
 from .auth.config import settings as auth_settings
+from .searching import fetch_source
 from .sources import SOURCES
-from .sources.base import Query, Video, session
+from .sources.base import Query, session
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
-CACHE_TTL = 600
-_cache: dict[tuple, tuple[float, list[Video]]] = {}
 
 log = logging.getLogger("aggregator")
+plugins.load()  # before anything reads SOURCES (the search endpoint's default list)
 
 
 @asynccontextmanager
@@ -44,42 +43,23 @@ async def lifespan(app: FastAPI):
     # runs search-only and the UI shows no sign-in.
     if auth_settings.enabled:
         await auth_db.connect()
+        await auth_send.migrate_metube()
+        await auth_admin.load_app_settings()
         log.warning("accounts enabled (db TLS: %s)", auth_settings.db_ssl)
-    refresher = asyncio.create_task(directory.keep_fresh())
+    tasks = [asyncio.create_task(directory.keep_fresh()), asyncio.create_task(feed.worker())]
+    if auth_settings.enabled:
+        tasks.append(asyncio.create_task(auth_alerts.loop()))
     yield
-    refresher.cancel()
+    for t in tasks:
+        t.cancel()
     await auth_db.close()
 
 
 app = FastAPI(title="Naughty Site Aggregator", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 auth_web.install(app)
 app.include_router(auth_routes.router)
-app.include_router(auth_metube.router)
-
-
-async def _fetch_page(name: str, q: Query) -> list[Video]:
-    key = (name, q.text, q.actor, q.channel, tuple(q.tags), q.min_sec, q.max_sec, q.page)
-    hit = _cache.get(key)
-    if hit and time.time() - hit[0] < CACHE_TTL:
-        return hit[1]
-    videos = await SOURCES[name].search(q)
-    _cache[key] = (time.time(), videos)
-    return videos
-
-
-async def _fetch_source(name: str, base: Query, start_page: int, pages: int) -> list[Video]:
-    queries = [Query(**{**base.__dict__, "page": p}) for p in range(start_page, start_page + pages)]
-    results = await asyncio.gather(*(_fetch_page(name, q) for q in queries), return_exceptions=True)
-    ok = [r for r in results if not isinstance(r, BaseException)]
-    if not ok:  # every page failed: surface the first error
-        raise results[0]
-    seen, out = set(), []
-    for page in ok:
-        for v in page:
-            if v.id not in seen:
-                seen.add(v.id)
-                out.append(v)
-    return out
+for module in (auth_send, auth_alerts, auth_admin):
+    app.include_router(module.router)
 
 
 @app.get("/api/search")
@@ -93,6 +73,7 @@ async def search(
     sources: str = Q(",".join(SOURCES), description="comma-separated"),
     page: int = Q(1, ge=1, description="batch number; each batch covers `pages` site pages"),
     pages: int = Q(2, ge=1, le=5),
+    sort: str = Q("", pattern="^(|new)$", description="new = newest first where the site supports it"),
 ):
     base = Query(
         text=q.strip(),
@@ -101,11 +82,12 @@ async def search(
         tags=[t.strip() for t in tags.split(",") if t.strip()],
         min_sec=max(0, min_sec),
         max_sec=max_sec,
+        sort=sort,
     )
     names = [s for s in sources.split(",") if s in SOURCES]
     start_page = (page - 1) * pages + 1
     results = await asyncio.gather(
-        *(_fetch_source(n, base, start_page, pages) for n in names), return_exceptions=True
+        *(fetch_source(n, base, start_page, pages) for n in names), return_exceptions=True
     )
 
     status, videos = {}, []
@@ -116,6 +98,22 @@ async def search(
             status[name] = {"ok": True, "count": len(res)}
             videos.extend(v.to_dict() for v in res)
     return {"videos": videos, "sources": status, "page": page}
+
+
+@app.get("/api/sources")
+async def sources_info():
+    """Every source with what it supports; plug-in sources also bring their badge label and colours."""
+    return {"sources": [{"name": n, "sorts": sorted(getattr(m, "SORTS", ())), "plugin": n in plugins.SOURCE_INFO,
+                         **plugins.SOURCE_INFO.get(n, {})} for n, m in SOURCES.items()]}
+
+
+@app.post("/api/feed")
+async def favorites_feed(body: dict = Body(...)):
+    """Recent videos of the given favorite performers / channels (see feed.py)."""
+    def names(key):
+        raw = body.get(key) if isinstance(body.get(key), list) else []
+        return [str(n).strip()[:100] for n in raw[:300] if str(n).strip()]
+    return feed.get(names("performers"), names("channels"))
 
 
 @app.get("/api/suggest")

@@ -10,6 +10,7 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from .base import Query, Video, keywords, parse_duration, session, unescape
 
+SORTS = {"new"}
 NAME = "xvideos"
 BASE = "https://www.xvideos.com"
 
@@ -32,6 +33,8 @@ async def search(q: Query) -> list[Video]:
     path = "/"
     if kw := keywords(q):
         params["k"] = kw
+        if q.sort == "new":
+            params["sort"] = "uploaddate"
         if q.page > 1:
             params["p"] = q.page - 1  # site pages are 0-based
     elif q.page > 1:

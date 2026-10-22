@@ -4,19 +4,21 @@
 // suggestions): focus shows everyone by popularity and scrolls through the
 // whole directory; typing narrows it. Picking an entry fills the box and runs
 // the search. Data: /api/suggest (built server-side from the sites' lists).
-// Performers can be starred; favorites (window.AggFavs, app.js) head the list.
+// Performers and channels can be starred; favorites (window.AggFavs /
+// AggFavChannels, app.js) head the list.
 (() => {
   const PAGE = 30;
   const fmt = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
-  const favs = window.AggFavs;
+  const books = { performer: window.AggFavs, channel: window.AggFavChannels };
   const key = (s) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
 
   function initials(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   }
 
-  function starButton(name, thumb) {
+  function starButton(kind, name, thumb) {
     const b = document.createElement("button");
+    b.dataset.kind = kind;
     b.type = "button";
     b.className = "combo-star";
     b.tabIndex = -1; // the list is driven from the text box; the box's own ☆ is keyboard reachable
@@ -26,15 +28,16 @@
     return b;
   }
   function syncStar(b) {
-    const on = favs.has(b.dataset.name);
+    const on = books[b.dataset.kind].has(b.dataset.name);
     b.textContent = on ? "★" : "☆";
     b.setAttribute("aria-pressed", String(on));
-    b.title = `${on ? "Remove" : "Add"} ${b.dataset.name || "this performer"} ${on ? "from" : "to"} favorites`;
+    b.title = `${on ? "Remove" : "Add"} ${b.dataset.name || `this ${b.dataset.kind}`} ${on ? "from" : "to"} favorites`;
     b.setAttribute("aria-label", b.title);
   }
 
   function setup(input, kind) {
-    const starrable = kind === "performer" && !!favs;
+    const favs = books[kind];
+    const starrable = !!favs;
     const wrap = document.createElement("div");
     wrap.className = `combo combo-${kind}`;
     input.replaceWith(wrap);
@@ -53,7 +56,7 @@
     // ☆ inside the box: favorite whatever name is typed there.
     let boxStar = null;
     if (starrable) {
-      boxStar = starButton("", "");
+      boxStar = starButton(kind, "", "");
       boxStar.classList.add("combo-boxstar");
       boxStar.tabIndex = 0;
       wrap.classList.add("has-star");
@@ -165,7 +168,7 @@
       }
       text.append(name, meta);
       li.append(pic, text);
-      if (starrable) li.append(starButton(item.name, item.thumb));
+      if (starrable) li.append(starButton(kind, item.name, item.thumb));
       return li;
     }
 

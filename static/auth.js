@@ -97,7 +97,9 @@
     const slot = document.getElementById("account-slot");
     if (!slot) return;
     slot.replaceChildren();
-    document.body.classList.toggle("has-metube", !!(cfg.enabled && me?.metube)); // shows the cards' Download buttons
+    // Shows the cards' Download buttons when the account has somewhere to send videos.
+    document.body.classList.toggle("has-targets", !!(cfg.enabled && me?.targets?.some((t) => t.can_send)));
+    window.dispatchEvent(new Event("targetschange"));
     if (!cfg.enabled) return;
     if (me) {
       const initial = (me.name || me.email || "?").trim()[0]?.toUpperCase() || "?";
@@ -243,15 +245,22 @@
       const { settings } = await api("GET", "/api/me/settings");
       if (settings) {
         const local = localStorage.getItem(SETTINGS_KEY);
-        let localFavs = [];
-        try { localFavs = JSON.parse(local || "{}").favorites || []; } catch {}
+        let mine = {};
+        try { mine = JSON.parse(local || "{}") || {}; } catch {}
+        // Lists kept while signed out on this device are added to the account's (by name / video).
         const k = (n) => String(n).toLowerCase().replace(/[^a-z0-9]/g, "");
-        const known = new Set((settings.favorites || []).map((f) => k(f.name)));
-        const extra = mergeFavs ? localFavs.filter((f) => f && f.name && !known.has(k(f.name))) : [];
-        if (extra.length) {
-          settings.favorites = [...(settings.favorites || []), ...extra].sort((a, b) => a.name.localeCompare(b.name));
-          api("PUT", "/api/me/settings", { settings }).catch(() => {});
+        const lists = [["favorites", (f) => k(f.name), true], ["favoriteChannels", (f) => k(f.name), true],
+          ["later", (v) => `${v.source}:${v.id}`, false], ["saved", (x) => x.id, false]];
+        let changed = false;
+        for (const [name, id, sort] of mergeFavs ? lists : []) {
+          const known = new Set((settings[name] || []).map(id));
+          const extra = (mine[name] || []).filter((x) => x && !known.has(id(x)));
+          if (!extra.length) continue;
+          settings[name] = [...(settings[name] || []), ...extra];
+          if (sort) settings[name].sort((a, b) => a.name.localeCompare(b.name));
+          changed = true;
         }
+        if (changed) api("PUT", "/api/me/settings", { settings }).catch(() => {});
         if (local !== JSON.stringify(settings)) {
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
           location.reload(); // simplest way to apply every saved filter consistently
@@ -330,11 +339,11 @@
     const m = modal("Your account", { wide: true });
     const tabs = h("div", { class: "tabs", role: "tablist" });
     const pane = h("div", { class: "tab-pane" });
-    const tabDefs = [["profile", "Profile"], ["security", "Security"]];
+    const tabDefs = [["profile", "Profile"], ["security", "Security"], ...(me?.is_admin ? [["admin", "Admin"]] : [])];
     const select = (t) => {
       for (const b of tabs.children) b.setAttribute("aria-selected", b.dataset.tab === t);
       pane.replaceChildren(h("p", { class: "hint", text: "Loading…" }));
-      (t === "profile" ? renderProfile : renderSecurity)(pane, () => select(t)).catch((e) => pane.replaceChildren(h("p", { class: "form-error", text: e.message })));
+      ({ profile: renderProfile, security: renderSecurity, admin: renderAdmin })[t](pane, () => select(t)).catch((e) => pane.replaceChildren(h("p", { class: "form-error", text: e.message })));
     };
     for (const [id, label] of tabDefs) tabs.append(h("button", { type: "button", role: "tab", "data-tab": id, text: label, onclick: () => select(id) }));
     m.body.append(tabs, pane);
@@ -364,7 +373,7 @@
           await api("POST", "/api/auth/logout").catch(() => {}); me = null; renderAccountButton();
           document.querySelector("dialog.modal")?.close(); toast("Signed out.");
         } })),
-      await metubeCard(refresh).catch(() => null),
+      await targetsCard(refresh).catch(() => null),
       h("section", { class: "danger" },
         h("h3", { text: "Delete account" }),
         h("p", { class: "hint", text: "Permanently deletes your account, keys, sign-in history and saved settings. This can't be undone." }),
@@ -375,40 +384,69 @@
         } })));
   }
 
-  /* ---------- MeTube (optional, per account) ---------- */
-  async function metubeCard(refresh) {
-    const cur = await api("GET", "/api/me/metube");
-    const err = errLine();
-    const url = h("input", { type: "url", value: cur.url || "", placeholder: "https://metube.example.com", required: true, maxlength: 300, autocomplete: "off", spellcheck: "false" });
-    const user = h("input", { type: "text", value: cur.username || "", maxlength: 200, autocomplete: "off", spellcheck: "false" });
-    const pass = h("input", { type: "password", maxlength: 500, autocomplete: "new-password",
-      placeholder: cur.has_password ? "Saved — leave blank to keep it" : "" });
-    const save = h("button", { type: "submit", class: "primary", text: cur.configured ? "Save" : "Connect MeTube" });
-    return h("section", { class: "sec-card" },
-      h("h3", {}, "MeTube", cur.configured ? h("span", { class: "badge-on", text: "Connected" }) : null),
-      h("p", { class: "hint", text: "Optional. Connect your own MeTube and every video gets a Download button that sends it there. " +
-        "Only you use this connection; the password is stored encrypted and never shown again." }),
-      h("form", { class: "auth-form", onsubmit: async (e) => {
-        e.preventDefault(); showErr(err); busy(save, true);
-        try {
-          const r = await api("PUT", "/api/me/metube", { url: url.value, username: user.value, password: pass.value });
-          await refreshMe(); toast(`MeTube connected (version ${r.version}).`); refresh();
-        } catch (x) { showErr(err, x.message); } finally { busy(save, false); }
-      } },
-        field("MeTube address", url),
-        h("div", { class: "metube-opts" },
-          field("Username (if your MeTube has a login)", user),
-          field("Password", pass)),
-        err,
-        h("div", { class: "row-actions" }, save,
-          cur.configured ? h("button", { type: "button", class: "btn danger-btn", text: "Disconnect", onclick: async () => {
-            if (!confirm("Disconnect MeTube? The Download buttons will disappear.")) return;
-            try { await api("DELETE", "/api/me/metube"); await refreshMe(); toast("MeTube disconnected."); refresh(); }
-            catch (x) { toast(x.message, true); }
-          } }) : null)));
+  /* ---------- Send to & notifications (optional, per account) ---------- */
+  let kindsCache = null;
+  async function targetKinds() {
+    if (!kindsCache) kindsCache = (await api("GET", "/api/targets/kinds")).kinds;
+    return kindsCache;
   }
 
-  // Same choices as MeTube's own form.
+  async function targetsCard(refresh) {
+    const [kinds, { targets }] = await Promise.all([targetKinds(), api("GET", "/api/me/targets")]);
+    const list = targets.length ? h("ul", { class: "item-list" }, targets.map((t) => h("li", {},
+      h("div", { class: "item-main" }, h("strong", { text: t.name }),
+        h("span", { class: "hint", text: [t.label, t.config.url || t.config.server || "", t.available ? "" : "plug-in missing"].filter(Boolean).join(" · ") })),
+      h("div", { class: "item-actions" },
+        t.can_notify ? h("button", { type: "button", class: "link-btn", text: "Test", onclick: async () => {
+          try { await api("POST", `/api/me/targets/${t.id}/test`); toast("Test notification sent."); } catch (x) { toast(x.message, true); }
+        } }) : null,
+        h("button", { type: "button", class: "link-btn", text: "Edit", onclick: () => targetForm(kinds.find((k) => k.kind === t.kind), t, refresh) }),
+        h("button", { type: "button", class: "link-btn danger-link", text: "Remove", onclick: async () => {
+          if (!confirm(`Remove ${t.name}?`)) return;
+          try { await api("DELETE", `/api/me/targets/${t.id}`); await refreshMe(); toast("Removed."); refresh(); } catch (x) { toast(x.message, true); }
+        } }))))) : null;
+    const pick = h("select", { "aria-label": "Add a destination" }, h("option", { value: "", text: "＋ Add…" }),
+      kinds.map((k) => h("option", { value: k.kind, text: k.label })));
+    pick.addEventListener("change", () => { const k = kinds.find((x) => x.kind === pick.value); pick.value = ""; if (k) targetForm(k, null, refresh); });
+    return h("section", { class: "sec-card" },
+      h("h3", {}, "Send to & notifications", targets.length ? h("span", { class: "badge-on", text: `${targets.length} connected` }) : null),
+      h("p", { class: "hint", text: "Optional. Connect your own MeTube, JDownloader, webhook, Discord or ntfy. Videos then get a Download button, " +
+        "and saved searches can notify you. Only you use these; passwords and tokens are stored encrypted and never shown again." }),
+      list, h("div", { class: "row-actions" }, pick));
+  }
+
+  function targetForm(kind, existing, refresh) {
+    const m = modal(existing ? `Edit ${existing.name}` : `Connect ${kind.label}`);
+    const err = errLine();
+    const name = h("input", { type: "text", maxlength: 60, value: existing?.name || kind.label });
+    const inputs = {};
+    const fields = kind.fields.map((f) => {
+      const secretSaved = existing?.secrets?.[f.name];
+      const inp = h("input", {
+        type: f.type === "password" ? "password" : f.type === "url" ? "url" : "text",
+        value: f.type === "password" ? "" : (existing?.config?.[f.name] ?? ""), maxlength: 1000,
+        placeholder: secretSaved ? "Saved — leave blank to keep it" : (f.placeholder || ""),
+        required: f.required && !secretSaved, autocomplete: f.type === "password" ? "new-password" : "off", spellcheck: "false",
+      });
+      inputs[f.name] = inp;
+      return h("label", { class: "field" }, h("span", { text: f.label }), inp, f.help ? h("small", { class: "hint", text: f.help }) : null);
+    });
+    const save = h("button", { type: "submit", class: "primary wide", text: existing ? "Save" : "Connect" });
+    m.body.append(
+      h("p", { class: "lead", text: kind.description }),
+      h("form", { class: "auth-form", onsubmit: async (e) => {
+        e.preventDefault(); showErr(err); busy(save, true); save.textContent = "Checking…";
+        const config = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
+        try {
+          const r = existing ? await api("PUT", `/api/me/targets/${existing.id}`, { name: name.value, config })
+            : await api("POST", "/api/me/targets", { kind: kind.kind, name: name.value, config });
+          m.dlg.close(); await refreshMe(); toast(`Connected: ${r.status}.`); refresh();
+        } catch (x) { showErr(err, x.message); save.textContent = existing ? "Save" : "Connect"; } finally { busy(save, false); }
+      } }, field("Name", name), ...fields, err, save));
+    (inputs[kind.fields[0]?.name] || name).focus();
+  }
+
+  // MeTube's own choices (same as its form).
   const MT = {
     types: [["video", "Video"], ["audio", "Audio"], ["captions", "Captions"], ["thumbnail", "Thumbnail"]],
     codecs: [["auto", "Auto"], ["h264", "H.264"], ["h265", "H.265 (HEVC)"], ["av1", "AV1"], ["vp9", "VP9"]],
@@ -425,48 +463,186 @@
       return [["best", "Best"]];
     },
   };
-  const MT_KEY = "agg-metube-opts";
+  const SEND_KEY = "agg-send-opts"; // last target + options, per device
 
-  function sendToMeTube(v) {
-    if (!me?.metube) return;
-    let last = {};
-    try { last = JSON.parse(localStorage.getItem(MT_KEY)) || {}; } catch {}
+  // Builds the option fields for a target; returns { el, values() }.
+  function optionFields(kind, last) {
     const sel = () => h("select", {});
-    const type = sel(), codec = sel(), format = sel(), quality = sel();
     const fill = (el, opts, want) => {
       el.replaceChildren(...opts.map(([id, text]) => h("option", { value: id, text })));
       el.value = opts.some(([id]) => id === want) ? want : opts[0][0];
     };
-    const codecField = field("Codec", codec), qualityField = field("Quality", quality);
-    const sync = (keep = {}) => {
-      fill(format, MT.formats[type.value], keep.format ?? format.value);
-      fill(quality, MT.quality(type.value, format.value), keep.quality ?? quality.value);
-      codecField.hidden = type.value !== "video";
-      qualityField.hidden = quality.options.length < 2;
-    };
-    fill(type, MT.types, last.download_type || "video");
-    fill(codec, MT.codecs, last.codec || "auto");
-    sync({ format: last.format || "any", quality: last.quality || "best" });
-    type.addEventListener("change", () => sync());
-    format.addEventListener("change", () => sync({ format: format.value }));
+    if (kind.options === "metube") {
+      const type = sel(), codec = sel(), format = sel(), quality = sel();
+      const codecField = field("Codec", codec), qualityField = field("Quality", quality);
+      const sync = (keep = {}) => {
+        fill(format, MT.formats[type.value], keep.format ?? format.value);
+        fill(quality, MT.quality(type.value, format.value), keep.quality ?? quality.value);
+        codecField.hidden = type.value !== "video";
+        qualityField.hidden = quality.options.length < 2;
+      };
+      fill(type, MT.types, last.download_type || "video");
+      fill(codec, MT.codecs, last.codec || "auto");
+      sync({ format: last.format || "any", quality: last.quality || "best" });
+      type.addEventListener("change", () => sync());
+      format.addEventListener("change", () => sync({ format: format.value }));
+      return { el: h("div", { class: "metube-opts" }, field("Type", type), codecField, field("Format", format), qualityField),
+        values: () => ({ download_type: type.value, codec: codec.value, format: format.value, quality: quality.value }) };
+    }
+    const opts = Array.isArray(kind.options) ? kind.options : [];
+    const els = opts.map((o) => { const s = sel(); fill(s, o.choices, last[o.name] ?? o.default); return [o, s]; });
+    return { el: els.length ? h("div", { class: "metube-opts" }, els.map(([o, s]) => field(o.label, s))) : null,
+      values: () => Object.fromEntries(els.map(([o, s]) => [o.name, s.value])) };
+  }
 
-    const m = modal("Download with MeTube");
+  // Resolves true once everything was sent (the dialog closes), false otherwise.
+  async function sendVideos(videos) {
+    const targets = (me?.targets || []).filter((t) => t.can_send);
+    if (!targets.length || !videos.length) return false;
+    let kinds;
+    try { kinds = await targetKinds(); } catch (x) { toast(x.message, true); return false; }
+    let allSent = false, finish;
+    const done = new Promise((r) => { finish = r; });
+    let last = {};
+    try { last = JSON.parse(localStorage.getItem(SEND_KEY)) || {}; } catch {}
+    const m = modal(videos.length === 1 ? "Send / download" : `Send ${videos.length} videos`, { onclose: () => finish(allSent) });
     const err = errLine();
-    const go = h("button", { type: "submit", class: "primary wide", text: "Download" });
-    m.body.append(
-      h("p", { class: "metube-video", text: v.title }),
+    const pick = h("select", {}, targets.map((t) => h("option", { value: t.id, text: `${t.name}` })));
+    if (targets.some((t) => t.id === last.target)) pick.value = last.target;
+    const optBox = h("div", {});
+    let opts = null;
+    const syncOpts = () => {
+      const t = targets.find((x) => x.id === pick.value);
+      opts = optionFields(kinds.find((k) => k.kind === t.kind) || { options: [] }, (last.options || {})[t.kind] || {});
+      optBox.replaceChildren(...(opts.el ? [opts.el] : []));
+    };
+    pick.addEventListener("change", syncOpts);
+    syncOpts();
+    const progress = h("ul", { class: "send-progress", hidden: true });
+    const go = h("button", { type: "submit", class: "primary wide", text: videos.length === 1 ? "Download" : `Send ${videos.length} videos` });
+    m.body.append(...[
+      videos.length === 1 ? h("p", { class: "metube-video", text: videos[0].title }) : null,
       h("form", { class: "auth-form", onsubmit: async (e) => {
-        e.preventDefault(); showErr(err); busy(go, true); go.textContent = "Sending to MeTube…";
-        const opts = { download_type: type.value, codec: codec.value, format: format.value, quality: quality.value };
-        try {
-          const r = await api("POST", "/api/metube/add", { url: v.url, ...opts });
-          try { localStorage.setItem(MT_KEY, JSON.stringify(opts)); } catch {}
-          m.dlg.close(); toast(r.message || "Sent to MeTube. It's downloading there now.");
-        } catch (x) { showErr(err, x.message); go.textContent = "Download"; } finally { busy(go, false); }
-      } },
-        h("div", { class: "metube-opts" }, field("Type", type), codecField, field("Format", format), qualityField),
-        err, go));
+        e.preventDefault(); showErr(err); busy(go, true);
+        const t = targets.find((x) => x.id === pick.value), options = opts.values();
+        try { localStorage.setItem(SEND_KEY, JSON.stringify({ target: t.id, options: { ...(last.options || {}), [t.kind]: options } })); } catch {}
+        progress.hidden = videos.length === 1; progress.replaceChildren();
+        let ok = 0, lastMsg = "";
+        for (const [i, v] of videos.entries()) {
+          go.textContent = videos.length === 1 ? "Sending…" : `Sending ${i + 1} of ${videos.length}…`;
+          const li = h("li", { text: v.title }); progress.append(li);
+          try {
+            const r = await api("POST", `/api/me/targets/${t.id}/send`, {
+              video: { url: v.url, title: v.title, source: v.source, duration: v.duration, thumb: v.thumb }, options });
+            ok++; lastMsg = r.message; li.className = "ok";
+            window.AggLib?.markSent(v, t);
+          } catch (x) {
+            li.className = "bad"; li.title = x.message; li.append(h("span", { class: "hint", text: ` — ${x.message}` }));
+            if (videos.length === 1) showErr(err, x.message);
+          }
+        }
+        busy(go, false);
+        if (ok === videos.length) { allSent = true; m.dlg.close(); toast(videos.length === 1 ? lastMsg : `Sent ${ok} videos to ${t.name}.`); }
+        else go.textContent = videos.length === 1 ? "Try again" : `Sent ${ok} of ${videos.length} — retry the rest`;
+        if (ok && videos.length > 1) videos = videos.filter((v, i) => progress.children[i]?.className !== "ok");
+      } }, targets.length > 1 ? field("Send to", pick) : null, optBox, err, progress, go)].filter(Boolean));
     go.focus();
+    return done;
+  }
+
+  /* ---------- saved-search alerts ---------- */
+  // Resolves to the alert id (on), null (turned off) or undefined (cancelled).
+  function alertDialog(saved) {
+    return new Promise(async (resolve) => {
+      if (!me) { toast("Sign in to get alerts.", true); return resolve(undefined); }
+      let result;
+      const m = modal("Alert for this search", { onclose: () => resolve(result) });
+      const notifiers = (me.targets || []).filter((t) => t.can_notify);
+      if (!notifiers.length) {
+        m.body.append(h("p", { class: "lead", text: "Alerts are sent through ntfy, Discord or a webhook. Connect one in Account → Profile → Send to & notifications first." }),
+          h("div", { class: "row-actions" }, h("button", { type: "button", class: "primary", text: "Open Profile", onclick: () => { m.dlg.close(); openAccount("profile"); } })));
+        return;
+      }
+      let existing = null;
+      if (saved.alertId) {
+        try { existing = (await api("GET", "/api/me/alerts")).alerts.find((a) => a.id === saved.alertId) || null; } catch {}
+      }
+      const err = errLine();
+      const pick = h("select", {}, notifiers.map((t) => h("option", { value: t.id, text: t.name })));
+      if (existing?.target_id) pick.value = existing.target_id;
+      const save = h("button", { type: "submit", class: "primary", text: existing ? "Save" : "Turn on alert" });
+      m.body.append(...[
+        h("p", { class: "lead", text: `Checks “${saved.name}” every few hours and notifies you when new videos show up.` }),
+        existing?.last_run ? h("p", { class: "hint", text: `Last checked ${fmtDate(existing.last_run)}${existing.last_new ? ` · ${existing.last_new} new` : ""}${existing.last_error ? ` · couldn't notify: ${existing.last_error}` : ""}` }) : null,
+        h("form", { class: "auth-form", onsubmit: async (e) => {
+          e.preventDefault(); showErr(err); busy(save, true);
+          try {
+            if (existing) { await api("PATCH", `/api/me/alerts/${existing.id}`, { target_id: pick.value, name: saved.name }); result = existing.id; }
+            else {
+              const p = saved.params;
+              result = (await api("POST", "/api/me/alerts", { name: saved.name, target_id: pick.value,
+                params: { q: p.q, actor: p.actor, channel: p.channel, tags: p.tags, min_sec: p.min_sec, max_sec: p.max_sec, sources: p.sources } })).id;
+            }
+            m.dlg.close(); toast("Alert on. You'll be notified about new videos.");
+          } catch (x) { showErr(err, x.message); } finally { busy(save, false); }
+        } }, field("Notify me with", pick), err,
+          h("div", { class: "row-actions" }, save,
+            existing ? h("button", { type: "button", class: "btn danger-btn", text: "Turn off", onclick: async () => {
+              try { await api("DELETE", `/api/me/alerts/${existing.id}`); result = null; m.dlg.close(); toast("Alert off."); } catch (x) { showErr(err, x.message); }
+            } }) : null))].filter(Boolean));
+    });
+  }
+
+  /* ---------- admin ---------- */
+  async function renderAdmin(pane, refresh) {
+    const d = await api("GET", "/api/admin/overview");
+    const ago = (t) => t ? fmtDate(new Date(t * 1000).toISOString()) : "never";
+    const sec = (title, desc, ...kids) => h("section", { class: "sec-card" }, h("h3", { text: title }), desc ? h("p", { class: "hint", text: desc }) : null, ...kids);
+    const reg = h("input", { type: "checkbox", checked: d.registration });
+    reg.addEventListener("change", async () => {
+      try { await api("POST", "/api/admin/registration", { open: reg.checked }); toast(reg.checked ? "Anyone can create an account now." : "New sign-ups are closed."); }
+      catch (x) { reg.checked = !reg.checked; toast(x.message, true); }
+    });
+    const users = h("ul", { class: "item-list" }, d.users.map((u) => h("li", {},
+      h("div", { class: "item-main" },
+        h("strong", { text: `${u.name || "(no name)"}${u.you ? " (you)" : ""}${u.admin ? " · admin" : ""}` }),
+        h("span", { class: "hint", text: `${u.email || "no email"} · joined ${fmtDate(u.created_at)} · last sign-in ${fmtDate(u.last_login_at)}` }),
+        h("span", { class: "hint", text: [u.two_step ? "2-step on" : "2-step off", `${u.passkeys} passkey(s)`, `${u.sessions} device(s)`,
+          `${u.targets} destination(s)`, `${u.alerts} alert(s)`, u.locked ? "LOCKED" : ""].filter(Boolean).join(" · ") })),
+      u.you ? null : h("div", { class: "item-actions" },
+        h("button", { type: "button", class: "link-btn", text: "Sign out", onclick: async () => {
+          try { await api("POST", `/api/admin/users/${u.id}/signout`); toast("Signed out everywhere."); refresh(); } catch (x) { toast(x.message, true); }
+        } }),
+        h("button", { type: "button", class: "link-btn danger-link", text: "Delete", onclick: async () => {
+          if (!confirm(`Delete ${u.email || u.name}'s account permanently?`)) return;
+          try { await guarded(() => api("DELETE", `/api/admin/users/${u.id}`)); toast("Account deleted."); refresh(); } catch (x) { toast(x.message, true); }
+        } })))));
+    const sites = h("table", { class: "health" },
+      h("thead", {}, h("tr", {}, ["Site", "State", "OK / failed (24 h)", "Avg", "Last error"].map((t) => h("th", { text: t })))),
+      h("tbody", {}, d.sites.map((s) => h("tr", { class: `st-${s.state}` },
+        h("td", { text: (typeof SOURCES === "object" && SOURCES[s.name]?.label) || s.name }),
+        h("td", {}, h("span", { class: `pill ${s.state}`, text: s.state === "ok" ? "OK" : s.state === "failing" ? "Failing" : "No traffic" })),
+        h("td", { text: `${s.ok_24h} / ${s.failed_24h}` }),
+        h("td", { text: s.avg_ms != null ? `${(s.avg_ms / 1000).toFixed(1)} s` : "–" }),
+        h("td", { class: "err-cell", title: s.last_error, text: s.last_error ? `${ago(s.last_error_at)}: ${s.last_error}` : "" })))));
+    const dir = d.directory;
+    const rebuild = h("button", { type: "button", class: "btn", text: dir.building ? "Rebuilding…" : "Rebuild now", disabled: dir.building, onclick: async (e) => {
+      try { await api("POST", "/api/admin/directory/rebuild"); e.target.textContent = "Rebuilding… (about a minute)"; e.target.disabled = true; }
+      catch (x) { toast(x.message, true); }
+    } });
+    pane.replaceChildren(
+      sec("Sign-ups", null, h("label", { class: "check" }, reg, " Anyone can create an account"),
+        h("p", { class: "hint", text: d.require_login ? "Searching needs an account (REQUIRE_LOGIN)." : "Searching works without an account." })),
+      sec(`Accounts (${d.users.length})`, null, users),
+      sec("Sites", "How each site answered over the last 24 hours. A failing site usually changed its page layout or is blocking this server.", h("div", { class: "table-wrap" }, sites)),
+      sec("Performer & channel lists", `${dir.performers.toLocaleString()} performers, ${dir.channels.toLocaleString()} channels · built ${ago(dir.built)}` +
+        (dir.last_errors?.length ? ` · last build had problems: ${dir.last_errors.join("; ")}` : ""), h("div", { class: "row-actions" }, rebuild)),
+      sec("Background jobs", `Favorites feed: ${d.feed.names} names tracked, ${d.feed.queued} waiting, ${d.feed.checked_24h} checked in 24 h · ${d.alerts} saved-search alert(s).`),
+      sec("Plug-ins", `Folder: ${d.plugins_dir}. Files there are loaded at start-up; restart the app after adding one.`,
+        d.plugins.length ? h("ul", { class: "item-list compact" }, d.plugins.map((p) => h("li", {},
+          h("div", { class: "item-main" }, h("strong", { text: `${p.kind}: ${p.name || p.file}` }),
+            h("span", { class: "hint", text: p.ok ? `${p.file} · loaded` : `${p.file} · failed: ${p.error}` }))))) : h("p", { class: "hint", text: "None installed." })),
+    );
   }
 
   function showBackupCodes(codes, title = "Save your backup codes") {
@@ -631,7 +807,10 @@
 
   window.AggAuth = {
     settingsChanged() { if (!me) return; clearTimeout(syncTimer); syncTimer = setTimeout(pushSettings, 1500); },
-    sendToMeTube,
+    sendVideos, alertDialog,
+    deleteAlert: (id) => api("DELETE", `/api/me/alerts/${id}`),
+    targets: () => me?.targets || [],
+    targetStatus: async (id, urls) => (await api("POST", `/api/me/targets/${id}/status`, { urls })).status,
     requireLogin() { if (cfg.enabled && !me && !document.querySelector("dialog.modal")) openSignIn(); },
   };
 

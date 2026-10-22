@@ -51,9 +51,7 @@ class Settings:
     require_login: bool = False
     allow_registration: bool = True
     providers: dict[str, Provider] = field(default_factory=dict)
-    # LAN / loopback addresses users may point their MeTube setting at
-    # ("host", "host:port" or a CIDR); public addresses are always allowed.
-    metube_private_hosts: tuple[str, ...] = ()
+    admin_emails: tuple[str, ...] = ()   # may open the admin page
 
     @property
     def enabled(self) -> bool:
@@ -112,7 +110,7 @@ def load() -> Settings:
         require_login=_bool("REQUIRE_LOGIN", False),
         allow_registration=_bool("ALLOW_REGISTRATION", True),
         providers=providers,
-        metube_private_hosts=tuple(h.strip().lower() for h in os.environ.get("METUBE_PRIVATE_HOSTS", "").split(",") if h.strip()),
+        admin_emails=tuple(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()),
     )
 
 

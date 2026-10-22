@@ -27,25 +27,74 @@ directories plus the most popular pages of xHamster's and XVideos'. They are reb
 cached in `/data` (mount a volume there to keep them across updates). Free text still works for
 names that aren't listed.
 
-## Favorite performers
+## Favorites and the "New from favorites" feed
 
-Star a performer (☆) in the Performer dropdown, on a video's performer chip, or in the Performer
-box itself. Favorites appear at the top of the dropdown and in a "Favorite performers" list at the
-top of the filters panel; one click searches that performer. They are saved with the other
-settings: in the browser, and, when signed in, synced (encrypted) to the account.
+Star a performer or a channel (☆) in its dropdown, in the box itself, or on a video card (the
+performer chip or the channel name). Favorites head the dropdowns and are listed in the filters
+panel; one click searches them.
 
-## Send to MeTube (optional, per account)
+The **New from favorites** tab collects the newest videos of every favorite from the sites that
+can sort newest-first (Pornhub, XVideos, xHamster, YouPorn, RedTube, Eporner, PornTrex). The
+server looks each name up in the background (every `FEED_REFRESH_HOURS`, default 6) and shares the
+result between everyone who favorited it; the tab shows a badge with how many arrived since you
+last looked. Filter the feed by favorite with the chips above it.
 
-Each signed-in user can connect their own [MeTube](https://github.com/alexta69/metube) in
-**Account → Profile → MeTube**: its address plus, if it sits behind a login (e.g. an Nginx Proxy
-Manager access list), a username and password. Saving checks the connection first. Once connected,
-every video gets a **Download** button that opens MeTube's usual choices (Type, Codec, Format,
-Quality) and sends the video to that user's MeTube; users without a MeTube never see the button.
-The settings are stored encrypted with the account (the password is never sent back to the browser)
-and can be changed or disconnected at any time.
+## Your library
 
-The server relays the request, so MeTube can be plain HTTP. For safety it only talks to public
-addresses; to allow a MeTube on your LAN, list it in `METUBE_PRIVATE_HOSTS`.
+- **Watch later:** 🕒 on a card saves it to the Watch later tab (up to 300).
+- **Watched:** videos you opened are dimmed and marked; tick *Hide videos I've watched* to drop them.
+- **Select mode:** *Select* turns cards into checkboxes; the bar at the bottom sends up to 50 at once,
+  adds them to Watch later or marks them watched / unwatched.
+- **Saved searches:** *＋ Save this search* keeps the keywords, performer, channel, tags, length,
+  sites and sort; one tap runs it again. 🔔 turns on an **alert**: the server re-runs it every
+  `ALERT_HOURS` (default 6) and notifies you through ntfy, Discord or a webhook when new videos appear.
+- **Block:** performers and tags you never want to see (channels: ✕ in the Channels list).
+- **Duplicates:** the same upload on several sites (Pornhub, YouPorn, Tube8 and RedTube share a
+  catalogue) becomes one card with "Also on …" buttons; untick *Merge the same video across sites*
+  to see them separately.
+- **Newest first:** a sort option; sites that can sort that way do it themselves.
+- The address bar always names the current search (e.g. `/?actor=Riley+Reid&sort=new`), so it can
+  be bookmarked or shared and survives a reload.
+
+All of this is saved with the other settings: in the browser and, when signed in, synced (encrypted)
+to the account.
+
+## Send to & notifications (optional, per account)
+
+In **Account → Profile → Send to & notifications** each user can connect their own:
+
+| Destination | What it does |
+|---|---|
+| [MeTube](https://github.com/alexta69/metube) | Downloads the video, with MeTube's Type / Codec / Format / Quality choices; cards then show its progress (queued, downloading %, downloaded, failed). |
+| JDownloader 2 | Adds the link to the link grabber via Click'n'Load (port 9666). |
+| Webhook | POSTs JSON to any URL (n8n, Home Assistant, a script); optional auth header. Also receives alerts. |
+| Discord | Posts the link to a channel webhook. Also receives alerts. |
+| ntfy | Push notification (ntfy.sh or self-hosted, optional token). Also receives alerts. |
+
+Saving tests the connection first. Once something that takes videos is connected, every video gets
+a **Download** button (and select mode a *Send* button). Secrets (passwords, tokens, the Discord
+webhook URL) are stored encrypted and never sent back to the browser; leaving one blank when editing
+keeps it only while the address stays on the same server.
+
+The server makes these requests itself, so destinations can be plain HTTP. Because anyone who can
+register could make it contact an address, it only connects to public addresses, never follows
+redirects, and pins the connection to the address it checked; a destination on your LAN must be
+listed in `SEND_PRIVATE_HOSTS`. Only video pages of the supported sites can be sent.
+
+## Admin page
+
+Accounts whose email is listed in `ADMIN_EMAILS` get an **Admin** tab: all accounts (sign them out
+or delete them), a switch for open sign-ups (overrides `ALLOW_REGISTRATION`), each site's health over
+the last 24 hours (successes, failures, speed, last error), the performer/channel lists (with
+*Rebuild now*), the background jobs, and the plug-ins that loaded or failed.
+
+## Plug-ins
+
+Extra sites and extra "Send to" destinations can be added without rebuilding the image: put Python
+files in `plugins/sources/` or `plugins/targets/` (mounted at `/plugins`) and restart. A plug-in with
+the same name as a built-in site replaces it — handy when a site changes its layout. Templates and
+instructions are in [`plugins-example/`](plugins-example/). Plug-ins run inside the server with full
+access to it: only install code you trust.
 
 ## Phones and tablets
 
@@ -87,7 +136,10 @@ filters, hidden channels and source choices across devices.
 | `REQUIRE_HTTPS` | `true` redirects any other address to `PUBLIC_URL`. |
 | `REQUIRE_LOGIN` | `true` means searching needs an account. |
 | `ALLOW_REGISTRATION` | `false` stops new sign-ups. |
-| `METUBE_PRIVATE_HOSTS` | LAN MeTube addresses users may connect, comma-separated `host`, `host:port` or CIDR (e.g. `192.168.1.10:8081`). Empty = public addresses only. Anyone who can register can make the server contact these, so list only what you need. |
+| `SEND_PRIVATE_HOSTS` | LAN addresses users may connect as destinations (MeTube, JDownloader, a webhook…), comma-separated `host`, `host:port` or CIDR (e.g. `192.168.1.10:8081`). Empty = public addresses only. Anyone who can register can make the server contact these, so list only what you need. (`METUBE_PRIVATE_HOSTS` still works.) |
+| `ADMIN_EMAILS` | Comma-separated emails of accounts that get the Admin tab. |
+| `ALERT_HOURS` / `FEED_REFRESH_HOURS` | How often saved-search alerts and the favorites feed are checked (default 6). |
+| `PLUGINS_DIR` | Plug-in folder (default `/plugins`). |
 | `GOOGLE_CLIENT_ID` / `_SECRET`, `FACEBOOK_…`, `DISCORD_…` | Optional providers. |
 
 Provider redirect URL to register: `<PUBLIC_URL>/api/auth/oauth/<google|facebook|discord>/callback`
@@ -123,10 +175,12 @@ Videos are never relayed.
 
 ## API
 
-`GET /api/search?q=&actor=&channel=&tags=a,b&min_sec=&max_sec=&sources=pornhub,xvideos,...&page=1&pages=2`
-(`sources` defaults to all twelve)
+`GET /api/search?q=&actor=&channel=&tags=a,b&min_sec=&max_sec=&sources=pornhub,xvideos,...&page=1&pages=2&sort=new`
+(`sources` defaults to all; `sort=new` = newest first where the site supports it)
 
-`POST /api/metube/add` `{url, download_type, codec, format, quality}` (signed in, MeTube connected)
+`GET /api/sources` (each site, what it can sort by, plug-in badge colours)
+`POST /api/feed` `{performers: [...], channels: [...]}` (recent videos of those favorites)
+`POST /api/me/targets/<id>/send` `{video: {url, title, source, duration, thumb}, options}` (signed in)
 `GET /api/suggest?kind=performer|channel&q=&offset=0&limit=30` (dropdown entries; empty `q` = everyone by popularity)
 
 ## Caveats

@@ -12,7 +12,7 @@
 <title>Aggregator</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-<!-- use-credentials: the public site sits behind HTTP basic auth, which a plain manifest fetch wouldn't send -->
+<!-- use-credentials: sends cookies with the manifest request (needed when a proxy in front asks for a login) -->
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <script src="/static/boot.js"></script>
 <link rel="stylesheet" href="/static/style.css">
@@ -56,8 +56,19 @@
       <button id="sheet-reset" type="button" class="link-btn">Reset</button>
     </div>
     <section>
+      <h2>Saved searches</h2>
+      <div id="saved-list" class="saved-list"></div>
+      <button id="save-search" type="button" class="link-btn add-link">＋ Save this search</button>
+    </section>
+
+    <section>
       <h2>Favorite performers <span id="fav-count" class="count"></span></h2>
       <div id="fav-list" class="fav-list"></div>
+    </section>
+
+    <section>
+      <h2>Favorite channels <span id="favch-count" class="count"></span></h2>
+      <div id="favch-list" class="fav-list"></div>
     </section>
 
     <section>
@@ -83,6 +94,16 @@
       <textarea id="exclude" rows="3" spellcheck="false"></textarea>
       <p class="hint">Comma separated. Hides any video whose title contains one of these.</p>
       <label class="check"><input id="strict" type="checkbox"> Title must contain every search word</label>
+      <label class="check"><input id="hide-watched" type="checkbox"> Hide videos I've watched</label>
+    </section>
+
+    <section>
+      <h2>Block</h2>
+      <label class="field-label" for="block-performers">Performers</label>
+      <textarea id="block-performers" rows="2" spellcheck="false" placeholder="Never show videos with these performers"></textarea>
+      <label class="field-label" for="block-tags">Tags</label>
+      <textarea id="block-tags" rows="2" spellcheck="false" placeholder="Never show videos with these tags"></textarea>
+      <p class="hint">Comma separated. To hide a channel, use ✕ in the Channels list.</p>
     </section>
 
     <section>
@@ -110,7 +131,9 @@
         <option value="shortest">Shortest first</option>
         <option value="views">Most viewed</option>
         <option value="rating">Top rated</option>
+        <option value="new">Newest first</option>
       </select>
+      <label class="check"><input id="merge-dups" type="checkbox" checked> Merge the same video across sites</label>
       <h2>Depth</h2>
       <select id="depth">
         <option value="1">1 page per site</option>
@@ -131,10 +154,27 @@
   </aside>
 
   <main>
+    <div class="viewbar">
+      <div id="views" class="views" role="tablist" aria-label="What to show">
+        <button type="button" role="tab" data-view="results">Results</button>
+        <button type="button" role="tab" data-view="feed">New<span class="wide-only">&nbsp;from favorites</span> <span id="feed-badge" class="badge" hidden></span></button>
+        <button type="button" role="tab" data-view="later">Watch later <span id="later-count" class="count"></span></button>
+      </div>
+      <button id="select-toggle" type="button" class="btn select-toggle" aria-pressed="false">Select</button>
+    </div>
     <div id="summary" class="summary">Type a search, or press Search to browse popular videos.</div>
     <div id="grid" class="grid"></div>
     <div class="more"><button id="load-more" class="btn" hidden>Load more</button></div>
   </main>
+</div>
+
+<div id="bulkbar" class="bulkbar" hidden role="toolbar" aria-label="Selected videos">
+  <span id="bulk-count" class="bulk-count">0 selected</span>
+  <button type="button" class="btn" data-bulk="all">Select all shown</button>
+  <button type="button" class="primary" id="bulk-send" data-bulk="send" data-needs-sel>⬇ Send / download</button>
+  <button type="button" class="btn" data-bulk="later" data-needs-sel>🕒 Watch later</button>
+  <button type="button" class="btn" data-bulk="watched" data-needs-sel>Mark watched</button>
+  <button type="button" class="btn" data-bulk="unwatched" data-needs-sel>Mark unwatched</button>
 </div>
 
 <nav class="mbar" aria-label="Quick actions">
@@ -171,6 +211,7 @@
 </template>
 
 <script src="/static/app.js"></script>
+<script src="/static/library.js"></script>
 <script src="/static/combo.js"></script>
 <script src="/static/auth.js"></script>
 </body>

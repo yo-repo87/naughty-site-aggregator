@@ -13,6 +13,7 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from .base import Query, Video, keywords, parse_count, parse_duration, session, unescape
 
+SORTS = {"new"}
 NAME = "porntrex"
 BASE = "https://www.porntrex.com"
 
@@ -39,7 +40,7 @@ async def search(q: Query) -> list[Video]:
     if q.page > 1:
         path += f"{q.page}/"
     async with session() as s:
-        r = await s.get(BASE + path)
+        r = await s.get(BASE + path, params={"sort_by": "post_date"} if q.sort == "new" else None)
         r.raise_for_status()
         doc = HTMLParser(r.text)
 

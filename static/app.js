@@ -26,7 +26,9 @@ const els = {
   form: $("search-form"), q: $("q"), actor: $("actor"), channel: $("channel"), tags: $("tags"),
   channelFind: $("channel-find"), channelList: $("channel-list"), channelActive: $("channel-active"),
   blockedWrap: $("blocked-wrap"), blockedList: $("blocked-list"),
-  favWrap: $("fav-wrap"), favList: $("fav-list"), favCount: $("fav-count"),
+  favList: $("fav-list"), favCount: $("fav-count"), favChList: $("favch-list"), favChCount: $("favch-count"),
+  blockPerformers: $("block-performers"), blockTags: $("block-tags"), hideWatched: $("hide-watched"), mergeDups: $("merge-dups"),
+  views: $("views"),
   lenMin: $("len-min"), lenMax: $("len-max"), lenMinLabel: $("len-min-label"), lenMaxLabel: $("len-max-label"),
   fill: $("range-fill"), exclude: $("exclude"), strict: $("strict"), sources: $("sources"),
   sort: $("sort"), depth: $("depth"), summary: $("summary"), grid: $("grid"), more: $("load-more"),
@@ -47,6 +49,7 @@ const state = {
   selected: new Map(), // channel key -> display name; non-empty = show only these
   blocked: new Map(),  // channel key -> display name; persisted
   exhausted: false,    // last "load more" found nothing new: stop infinite scroll
+  view: "results",     // results | feed | later (library.js draws the last two)
 };
 
 // Set by the inline script in index.html before first paint.
@@ -63,7 +66,10 @@ function saveSettings() {
       min: +els.lenMin.value, max: +els.lenMax.value, exclude: els.exclude.value,
       strict: els.strict.checked, sort: els.sort.value, depth: els.depth.value,
       sourcesOff: Object.keys(SOURCES).filter((n) => !enabledSources().includes(n)),
-      blocked: [...state.blocked], autoplay: els.autoplay.checked, favorites: favs.list,
+      blocked: [...state.blocked], autoplay: els.autoplay.checked, favorites: favs.list, favoriteChannels: favChannels.list,
+      blockPerformers: els.blockPerformers.value, blockTags: els.blockTags.value,
+      hideWatched: els.hideWatched.checked, mergeDups: els.mergeDups.checked,
+      ...libSettings(), // watch later, watched, sent, saved searches (library.js)
     }));
   } catch { /* storage unavailable: settings just won't persist */ }
   window.AggAuth?.settingsChanged(); // signed in: sync to the account (encrypted server-side)
@@ -121,11 +127,15 @@ async function search({ append = false } = {}) {
     q: els.q.value.trim(), actor: els.actor.value.trim(), channel: els.channel.value.trim(), tags: splitList(els.tags.value).join(","),
     min_sec: minSec, sources: sources.join(","), pages: els.depth.value,
   };
+  if (els.sort.value === "new") params.sort = "new"; // sites that can sort newest-first do it themselves
   if (maxSec != null) params.max_sec = maxSec;
 
   const seq = ++state.searchSeq;
   state.loading = true;
-  if (!append) { state.searchedActor = params.actor; renderFavs(); } // highlight the performer being searched
+  if (!append) {
+    state.searchedActor = params.actor; state.searchedChannel = params.channel; renderFavs(); showView("results"); // highlight the favorite being searched
+    syncUrl(params);
+  }
   if (!append) {
     state.page = 0; state.videos = []; state.sourceStatus = {}; state.selected.clear(); state.exhausted = false;
     els.grid.innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join("");
@@ -172,12 +182,14 @@ function applyFilters() {
   // Channel search box: match the uploader, or the title for results whose
   // site didn't say who uploaded them (Pornhub API-only hits).
   const chWanted = chKey(state.fetched?.channel || "");
-  const dropped = { length: 0, words: 0, strict: 0, channel: 0 };
+  const dropped = { length: 0, words: 0, strict: 0, channel: 0, blocked: 0, watched: 0, dups: 0 };
 
   const kept = state.videos.filter((v) => {
     if (!on.has(v.source)) return false;
     const ck = chKey(v.uploader);
     if (ck && state.blocked.has(ck)) { dropped.channel++; return false; }
+    if (isBlocked(v)) { dropped.blocked++; return false; }
+    if (els.hideWatched.checked && isWatched(v)) { dropped.watched++; return false; }
     if (chWanted && !(ck ? ck.includes(chWanted) : chKey(v.title).includes(chWanted))) { dropped.channel++; return false; }
     // Minute-rounded durations ("12 min") could be up to 59s longer.
     const top = v.duration + (v.duration_exact ? 0 : 59);
@@ -200,20 +212,57 @@ function applyFilters() {
     : kept;
   dropped.notSelected = kept.length - selectedOnly.length;
 
-  const sort = els.sort.value;
+  const list = sortVideos(selectedOnly, els.sort.value);
+  const merged = els.mergeDups.checked ? mergeDuplicates(list) : list;
+  dropped.dups = list.length - merged.length;
+  return { list: merged, dropped, facets };
+}
+
+function sortVideos(videos, sort) {
   if (sort === "mixed") {
     // Round-robin across sources, preserving each site's own relevance order.
     const buckets = {};
-    for (const v of selectedOnly) (buckets[v.source] ||= []).push(v);
+    for (const v of videos) (buckets[v.source] ||= []).push(v);
     const lists = Object.values(buckets), out = [];
-    for (let i = 0; out.length < selectedOnly.length; i++) for (const l of lists) if (l[i]) out.push(l[i]);
-    return { list: out, dropped, facets };
+    for (let i = 0; out.length < videos.length; i++) for (const l of lists) if (l[i]) out.push(l[i]);
+    return out;
   }
   const key = {
     longest: (v) => -v.duration, shortest: (v) => v.duration,
     views: (v) => -(v.views ?? -1), rating: (v) => -(v.rating ?? -1),
+    // Undated videos (some sites don't say) keep their site's newest-first order, after the dated ones.
+    new: (v) => -(Date.parse(v.published) || 0),
   }[sort];
-  return { list: selectedOnly.slice().sort((a, b) => key(a) - key(b)), dropped, facets };
+  return videos.slice().sort((a, b) => key(a) - key(b));
+}
+
+// Block lists: performers and tags (channels have their own ✕ list).
+let blockCache = null;
+function isBlocked(v) {
+  if (!blockCache) blockCache = { p: new Set(splitList(els.blockPerformers.value).map(chKey)), t: new Set(splitList(els.blockTags.value).map(norm)) };
+  return (blockCache.p.size && v.actors.some((a) => blockCache.p.has(chKey(a)))) ||
+    (blockCache.t.size && v.tags.some((t) => blockCache.t.has(norm(t))));
+}
+
+// The same upload often appears on several sites (Pornhub, YouPorn, Tube8 and
+// RedTube share a catalogue). Same title and about the same length = one card,
+// with the other sites listed under it.
+function dupKey(v) {
+  return norm(v.title).replace(/\b(hd|4k|1080p|720p|full|video|xxx|porn)\b/g, "").replace(/[^a-z0-9]/g, "");
+}
+function mergeDuplicates(list) {
+  const byTitle = new Map(), out = [];
+  for (const v of list) {
+    const k = dupKey(v);
+    if (k.length < 12) { out.push(v); continue; }
+    const group = (byTitle.get(k) || []).find((g) => g.source !== v.source && !(g._dups || []).some((d) => d.source === v.source) &&
+      Math.abs(g.duration - v.duration) <= (g.duration_exact && v.duration_exact ? 3 : 60));
+    if (group) { (group._dups ||= []).push(v); continue; }
+    v._dups = null;
+    (byTitle.get(k) || byTitle.set(k, []).get(k)).push(v);
+    out.push(v);
+  }
+  return out;
 }
 
 /* ---------- rendering ---------- */
@@ -285,20 +334,27 @@ function showOnlyChannel(name) {
 
 function render() {
   renderSources();
-  if (!state.fetched) return;
+  blockCache = null;
+  renderViewTabs();
+  if (state.view !== "results") { renderLibraryView(); return; }
+  els.more.parentElement.hidden = false;
+  if (!state.fetched) { els.summary.textContent = "Type a search, or press Search to browse popular videos."; els.grid.replaceChildren(); return; }
   const { list, dropped, facets } = applyFilters();
   renderChannels(facets);
-  const hidden = dropped.length + dropped.words + dropped.strict + dropped.channel + dropped.notSelected;
+  const hidden = dropped.length + dropped.words + dropped.strict + dropped.channel + dropped.notSelected + dropped.blocked + dropped.watched;
   const parts = [];
   if (dropped.length) parts.push(`${dropped.length} outside length range`);
   if (dropped.words) parts.push(`${dropped.words} excluded by title words`);
   if (dropped.strict) parts.push(`${dropped.strict} missing search words`);
   if (dropped.channel) parts.push(`${dropped.channel} other/hidden channels`);
   if (dropped.notSelected) parts.push(`${dropped.notSelected} outside ticked channels`);
+  if (dropped.blocked) parts.push(`${dropped.blocked} blocked performers/tags`);
+  if (dropped.watched) parts.push(`${dropped.watched} watched`);
   const errs = Object.entries(state.sourceStatus).filter(([, s]) => !s.ok).map(([n]) => SOURCES[n].label);
   els.summary.innerHTML =
     `Showing <b>${list.length}</b> of ${state.videos.length} fetched` +
     (hidden ? ` · hidden: ${parts.join(", ")}` : "") +
+    (dropped.dups ? ` · ${dropped.dups} duplicate${dropped.dups === 1 ? "" : "s"} merged` : "") +
     (errs.length ? ` · <span style="color:var(--accent)">${errs.join(", ")} failed (${isMobile() ? "see Filters → Sources" : "hover source for details"})</span>` : "");
 
   const frag = document.createDocumentFragment();
@@ -338,7 +394,15 @@ function card(v) {
   const metaEl = node.querySelector(".meta");
   if (v.uploader) {
     const up = Object.assign(document.createElement("span"), { className: "uploader", textContent: v.uploader, title: "Show only this channel" });
+    up.dataset.name = v.uploader;
+    up.classList.toggle("fav", favChannels.has(v.uploader));
     up.addEventListener("click", () => showOnlyChannel(v.uploader));
+    const star = document.createElement("span");
+    star.className = "chip-star";
+    star.setAttribute("aria-hidden", "true");
+    star.title = "Favorite / unfavorite this channel";
+    star.addEventListener("click", (e) => { e.stopPropagation(); favChannels.toggle(v.uploader); });
+    up.prepend(star);
     metaEl.appendChild(up);
   }
   const meta = [];
@@ -361,15 +425,30 @@ function card(v) {
     chips.appendChild(c);
   }
   for (const t of v.tags.slice(0, 6)) chips.appendChild(chip(t, "", () => addTag(t)));
-  // Shown only once the account has a MeTube set up (body.has-metube, auth.js).
-  node.querySelector(".dl-btn").addEventListener("click", () => window.AggAuth?.sendToMeTube(v));
+  // Shown only once the account has somewhere to send videos (body.has-targets, auth.js).
+  node.querySelector(".dl-btn").addEventListener("click", () => window.AggAuth?.sendVideos([v]));
+  if (v._dups?.length) {
+    const also = Object.assign(document.createElement("div"), { className: "dups" });
+    also.append("Also on ");
+    for (const d of v._dups) {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: "dup", textContent: SOURCES[d.source]?.label || d.source, title: `Watch on ${SOURCES[d.source]?.label || d.source}` });
+      b.style.background = SOURCES[d.source]?.color; b.style.color = SOURCES[d.source]?.ink;
+      b.addEventListener("click", () => openPlayer(d));
+      also.append(b);
+    }
+    node.querySelector(".info").insertBefore(also, node.querySelector(".chip-row"));
+  }
+  decorateCard(node, v); // watch later, watched, sent / download status, select mode (library.js)
 
   // Click the thumbnail to watch in the site's own embed player.
   thumb.addEventListener("click", (e) => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return; // let open-in-new-tab work
+    if (selectMode()) { e.preventDefault(); toggleSelected(v, node); return; }
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) { markWatched(v); return; } // let open-in-new-tab work
     e.preventDefault();
     openPlayer(v);
   });
+  title.addEventListener("click", () => markWatched(v));
+  thumb.addEventListener("auxclick", () => markWatched(v));
   // Hover preview, streamed straight from the site's CDN. Touch screens have
   // no hover; they get the optional scroll auto-play instead.
   if (v.preview) {
@@ -483,6 +562,7 @@ function addTag(t) {
 }
 
 function openPlayer(v) {
+  markWatched(v);
   els.playerTitle.textContent = v.title;
   els.playerOpen.href = v.url;
   if (!v.embed_url) { window.open(v.url, "_blank", "noopener,noreferrer"); return; } // site has no embed player
@@ -495,40 +575,52 @@ function closePlayer() {
   if (els.player.open) els.player.close();
 }
 
-/* ---------- favorite performers ---------- */
+/* ---------- favorite performers and channels ---------- */
 // Saved with the other settings (so they sync, encrypted, when signed in).
-// combo.js uses window.AggFavs for the stars and the Favorites section of the dropdown.
+// combo.js uses window.AggFavs / AggFavChannels for the stars and the
+// Favorites section of each dropdown.
 const FAV_MAX = 300;
 const favKey = (name) => chKey(name);
-const favs = {
-  list: [], // [{ name, thumb }], alphabetical
-  has(name) { const k = favKey(name); return !!k && this.list.some((f) => favKey(f.name) === k); },
-  async toggle(name, thumb = "") {
-    name = name.trim();
-    if (!name) return false;
-    const k = favKey(name);
-    if (this.has(name)) {
-      this.list = this.list.filter((f) => favKey(f.name) !== k);
-    } else {
-      if (this.list.length >= FAV_MAX) { alert(`You can keep up to ${FAV_MAX} favorites.`); return false; }
-      this.list = [...this.list, { name, thumb }].sort((a, b) => a.name.localeCompare(b.name));
-      if (!thumb) this.fillThumb(name); // starred from a card or a typed name
-    }
-    this.changed();
-    return this.has(name);
-  },
-  // Use the directory's spelling and picture when the name is listed there.
-  async fillThumb(name) {
-    try {
-      const res = await fetch("/api/suggest?" + new URLSearchParams({ kind: "performer", q: name, limit: 5 }));
-      const hit = res.ok && (await res.json()).items.find((i) => favKey(i.name) === favKey(name));
-      const f = hit && this.list.find((x) => favKey(x.name) === favKey(name));
-      if (f) { f.name = hit.name; f.thumb = hit.thumb; this.changed(); }
-    } catch { /* keep the initials */ }
-  },
-  changed() { saveSettings(); renderFavs(); },
-};
+function makeFavs(kind) {
+  return {
+    kind,
+    list: [], // [{ name, thumb }], alphabetical
+    has(name) { const k = favKey(name || ""); return !!k && this.list.some((f) => favKey(f.name) === k); },
+    async toggle(name, thumb = "") {
+      name = name.trim();
+      if (!name) return false;
+      const k = favKey(name);
+      if (this.has(name)) {
+        this.list = this.list.filter((f) => favKey(f.name) !== k);
+      } else {
+        if (this.list.length >= FAV_MAX) { alert(`You can keep up to ${FAV_MAX} favorite ${kind}s.`); return false; }
+        this.list = [...this.list, { name, thumb }].sort((a, b) => a.name.localeCompare(b.name));
+        if (!thumb) this.fillThumb(name); // starred from a card or a typed name
+      }
+      this.changed();
+      return this.has(name);
+    },
+    // Use the directory's spelling and picture when the name is listed there.
+    async fillThumb(name) {
+      try {
+        const res = await fetch("/api/suggest?" + new URLSearchParams({ kind, q: name, limit: 5 }));
+        const hit = res.ok && (await res.json()).items.find((i) => favKey(i.name) === favKey(name));
+        const f = hit && this.list.find((x) => favKey(x.name) === favKey(name));
+        if (f) { f.name = hit.name; f.thumb = hit.thumb; this.changed(); }
+      } catch { /* keep the initials */ }
+    },
+    load(raw) {
+      this.list = (Array.isArray(raw) ? raw : [])
+        .filter((f) => f && typeof f.name === "string" && f.name.trim())
+        .map((f) => ({ name: f.name, thumb: typeof f.thumb === "string" && /^(https:|\/api\/thumb)/.test(f.thumb) ? f.thumb : "" }));
+    },
+    changed() { saveSettings(); renderFavs(); feedChanged(); },
+  };
+}
+const favs = makeFavs("performer");
+const favChannels = makeFavs("channel");
 window.AggFavs = favs;
+window.AggFavChannels = favChannels;
 
 function favPic(f) {
   const pic = document.createElement("span");
@@ -542,31 +634,49 @@ function favPic(f) {
   return pic;
 }
 
-function renderFavs() {
-  const current = favKey(state.searchedActor || "");
-  els.favCount.textContent = favs.list.length ? `(${favs.list.length})` : "";
-  els.favList.replaceChildren(...(favs.list.length ? favs.list.map((f) => {
+function favTiles(book, current, onGo, empty) {
+  return book.list.length ? book.list.map((f) => {
     const tile = document.createElement("div");
     tile.className = "fav" + (favKey(f.name) === current ? " active" : "");
     const go = Object.assign(document.createElement("button"), { type: "button", className: "fav-go", title: `Search ${f.name}` });
     go.append(favPic(f), Object.assign(document.createElement("span"), { className: "fav-name", textContent: f.name }));
     go.addEventListener("click", () => {
-      els.actor.value = f.name; saveSettings(); search();
+      onGo(f.name); showView("results"); saveSettings(); search();
       if (isMobile()) closeSheet();
     });
     const rm = Object.assign(document.createElement("button"), { type: "button", className: "fav-rm", textContent: "✕", title: `Remove ${f.name} from favorites` });
     rm.setAttribute("aria-label", rm.title);
-    rm.addEventListener("click", () => favs.toggle(f.name));
+    rm.addEventListener("click", () => book.toggle(f.name));
     tile.append(go, rm);
     return tile;
-  }) : [Object.assign(document.createElement("p"), { className: "hint", textContent: "Tap ☆ next to a performer (in the Performer dropdown or on a video) to keep them here." })]));
-  // Stars on the video cards and in the Performer box.
+  }) : [Object.assign(document.createElement("p"), { className: "hint", textContent: empty })];
+}
+
+function renderFavs() {
+  els.favCount.textContent = favs.list.length ? `(${favs.list.length})` : "";
+  els.favChCount.textContent = favChannels.list.length ? `(${favChannels.list.length})` : "";
+  els.favList.replaceChildren(...favTiles(favs, favKey(state.searchedActor || ""), (n) => { els.actor.value = n; els.channel.value = ""; },
+    "Tap ☆ next to a performer (in the Performer dropdown or on a video) to keep them here."));
+  els.favChList.replaceChildren(...favTiles(favChannels, favKey(state.searchedChannel || ""), (n) => { els.channel.value = n; els.actor.value = ""; },
+    "Tap ☆ next to a channel (in the Channel dropdown or on a video) to keep it here."));
+  // Stars on the video cards and in the Performer / Channel boxes.
   for (const c of document.querySelectorAll(".chip.actor")) c.classList.toggle("fav", favs.has(c.dataset.name));
+  for (const c of document.querySelectorAll(".uploader")) c.classList.toggle("fav", favChannels.has(c.dataset.name));
   window.dispatchEvent(new Event("favchange"));
 }
 
+/* ---------- views: search results / new from favorites / watch later ---------- */
+function showView(view) {
+  if (state.view === view) return;
+  state.view = view;
+  window.scrollTo({ top: 0 });
+  render();
+}
+// renderViewTabs() and renderLibraryView() live in library.js.
+
 /* ---------- init ---------- */
-function init() {
+async function init() {
+  await loadSourceInfo(); // plug-in sites (badge colours) and which sites sort newest-first
   try {
     if (localStorage.getItem("agg-age-ok") !== "1") $("agegate").hidden = false;
   } catch { $("agegate").hidden = false; }
@@ -589,10 +699,14 @@ function init() {
     els.sources.appendChild(label);
   }
   for (const [k, name] of s.blocked || []) state.blocked.set(k, name);
-  favs.list = (Array.isArray(s.favorites) ? s.favorites : [])
-    .filter((f) => f && typeof f.name === "string" && f.name.trim())
-    .map((f) => ({ name: f.name, thumb: typeof f.thumb === "string" && /^(https:|\/api\/thumb)/.test(f.thumb) ? f.thumb : "" }));
+  favs.load(s.favorites);
+  favChannels.load(s.favoriteChannels);
+  libLoad(s);
   renderFavs();
+  els.blockPerformers.value = s.blockPerformers || "";
+  els.blockTags.value = s.blockTags || "";
+  els.hideWatched.checked = !!s.hideWatched;
+  els.mergeDups.checked = s.mergeDups ?? true;
   els.lenMin.value = s.min ?? 5;
   els.lenMax.value = s.max ?? SLIDER_MAX;
   els.exclude.value = s.exclude ?? DEFAULT_EXCLUDE;
@@ -643,7 +757,17 @@ function init() {
   moreObserver.observe(els.more.parentElement);
   els.exclude.addEventListener("input", () => { saveSettings(); render(); });
   els.strict.addEventListener("change", () => { saveSettings(); render(); });
-  els.sort.addEventListener("change", () => { saveSettings(); render(); });
+  let lastSort = els.sort.value;
+  els.sort.addEventListener("change", () => {
+    saveSettings();
+    // Newest-first is done by the sites themselves: switching to or from it fetches again.
+    const refetch = (lastSort === "new") !== (els.sort.value === "new") && state.fetched;
+    lastSort = els.sort.value;
+    refetch ? search() : render();
+  });
+  for (const el of [els.blockPerformers, els.blockTags]) el.addEventListener("input", () => { saveSettings(); render(); });
+  for (const el of [els.hideWatched, els.mergeDups]) el.addEventListener("change", () => { saveSettings(); render(); });
+  for (const b of els.views.querySelectorAll("[data-view]")) b.addEventListener("click", () => showView(b.dataset.view));
   els.depth.addEventListener("change", saveSettings);
   for (const [id, on] of [["sources-all", true], ["sources-none", false]]) {
     $(id).addEventListener("click", () => {
@@ -669,6 +793,45 @@ function init() {
   els.player.addEventListener("click", (e) => { if (e.target === els.player) closePlayer(); });
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  libInit(); // library.js: feed polling, saved searches, select bar
+  applyUrlSearch(); // links from alerts: /?actor=…&sort=new
 }
 
-init();
+// Sources from the server: plug-in sites bring their own badge colours.
+async function loadSourceInfo() {
+  try {
+    const res = await fetch("/api/sources");
+    if (!res.ok) return;
+    for (const src of (await res.json()).sources) {
+      SOURCES[src.name] ||= { label: src.label || src.name, color: src.color || "#64748b", ink: src.ink || "#fff" };
+      SOURCES[src.name].sorts = src.sorts || [];
+    }
+  } catch { /* built-in list only */ }
+}
+
+// The address bar names the current search (shareable, survives a reload), e.g.
+// /?actor=Riley+Reid&sort=new. Alerts link to such addresses.
+function syncUrl(params) {
+  if (history.state) return; // a phone overlay (sheet / player) owns the current history entry
+  const keep = Object.fromEntries(["q", "actor", "channel", "tags", "sort"].filter((k) => params[k]).map((k) => [k, params[k]]));
+  const qs = new URLSearchParams(keep).toString();
+  history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+}
+
+function applyUrlSearch() {
+  const p = new URLSearchParams(location.search);
+  if (![...p.keys()].some((k) => ["q", "actor", "channel", "tags"].includes(k))) return;
+  els.q.value = p.get("q") || "";
+  els.actor.value = p.get("actor") || "";
+  els.channel.value = p.get("channel") || "";
+  els.tags.value = (p.get("tags") || "").split(",").filter(Boolean).join(", ");
+  if (p.has("min_sec")) els.lenMin.value = Math.min(SLIDER_MAX, Math.floor(+p.get("min_sec") / 60) || 0);
+  els.lenMax.value = p.has("max_sec") ? Math.min(SLIDER_MAX, Math.floor(+p.get("max_sec") / 60)) : SLIDER_MAX;
+  if (p.get("sort") === "new") els.sort.value = "new";
+  syncSlider();
+  if (els.actor.value || els.channel.value || els.tags.value) els.adv.classList.add("open");
+  search();
+}
+
+// Runs after every script has loaded (library.js and combo.js add to this file's functions).
+document.addEventListener("DOMContentLoaded", init);

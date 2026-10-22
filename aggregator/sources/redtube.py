@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .base import Query, Video, parse_duration, session
 
+SORTS = {"new"}
 NAME = "redtube"
 API = "https://api.redtube.com/"
 
@@ -21,7 +22,9 @@ async def search(q: Query) -> list[Video]:
         params.append(("search", text))
     for t in q.tags:
         params.append(("tags[]", t))
-    if not text and not q.tags:
+    if q.sort == "new":
+        params.append(("ordering", "newest"))
+    elif not text and not q.tags:
         params.append(("ordering", "mostviewed"))
 
     async with session() as s:

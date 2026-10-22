@@ -15,7 +15,7 @@ from fastapi import APIRouter, Body, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from urllib.parse import quote
 
-from . import challenges, crypto, db, oauth, passkeys
+from . import admin, challenges, crypto, db, oauth, passkeys, send
 from .config import settings
 from .sessions import (
     STEP_UP_MINUTES, create_session, current_session, end_session, finish_pending, log_event, now,
@@ -29,7 +29,7 @@ MIN_PASSWORD = 10
 LOCK_AFTER = 8
 LOCK_MINUTES = 15
 BACKUP_CODES = 10
-SETTINGS_MAX = 256 * 1024  # filters + up to 300 favorite performers with picture URLs
+SETTINGS_MAX = 1024 * 1024  # filters, favorites, watch later, watched list, saved searches
 EVENT_LABELS = {
     "registered": "Account created", "signed_in": "Signed in", "signed_out": "Signed out",
     "login_failed": "Failed sign-in attempt", "password_set": "Password changed",
@@ -39,6 +39,7 @@ EVENT_LABELS = {
     "credential_removed": "Passkey or security key removed", "identity_linked": "Account connected",
     "identity_unlinked": "Account disconnected", "sessions_revoked": "Signed out other devices",
     "email_changed": "Email changed", "reauth": "Confirmed identity",
+    "admin_registration_opened": "Admin: opened registration", "admin_registration_closed": "Admin: closed registration",
 }
 
 
@@ -419,7 +420,9 @@ async def me(request: Request):
         return {"user": None}
     u = await _user(s["user_id"])
     return {"user": {"name": _name(u), "email": _email(u), "has_password": u["password_hash"] is not None,
-                     "created_at": u["created_at"].isoformat(), "metube": u["metube_enc"] is not None}}
+                     "created_at": u["created_at"].isoformat(), "is_admin": admin.is_admin(u),
+                     "targets": [{k: t[k] for k in ("id", "kind", "label", "name", "can_send", "can_notify", "has_status")}
+                                 for t in await send.list_targets(u["id"]) if t["available"]]}}
 
 
 @router.patch("/api/me")

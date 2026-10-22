@@ -14,6 +14,8 @@ services:
       - ./certs:/certs:ro
       # Performer/channel dropdown lists, so a rebuild doesn't re-crawl the sites
       - aggregator-data:/data
+      # Optional plug-ins: plugins/sources/*.py and plugins/targets/*.py (see plugins-example/)
+      - ./plugins:/plugins:ro
     networks:
       - default
       - shared-postgres-net

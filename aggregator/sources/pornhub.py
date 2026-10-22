@@ -18,6 +18,7 @@ from urllib.parse import quote, urlparse
 
 from .base import Query, Video, keywords, parse_count, parse_duration, session, unescape
 
+SORTS = {"new"}
 NAME = "pornhub"
 BASE = "https://www.pornhub.com"
 API = BASE + "/webmasters/search"
@@ -43,7 +44,9 @@ async def _api(q: Query) -> list[Video]:
         params.append(("stars[]", q.actor))
     for t in q.tags:
         params.append(("tags[]", t))
-    if not text and not q.actor and not q.tags:
+    if q.sort == "new":
+        params.append(("ordering", "newest"))
+    elif not text and not q.actor and not q.tags:
         params.append(("ordering", "mostviewed"))
 
     async with session() as s:
@@ -89,6 +92,8 @@ def _min_duration(min_sec: int) -> int | None:
 
 async def _html(q: Query) -> list[Video]:
     params: dict[str, str | int] = {"search": keywords(q) or "popular", "page": q.page}
+    if q.sort == "new":
+        params["o"] = "mr"
     if (d := _min_duration(q.min_sec)) is not None:
         params["min_duration"] = d
     async with session() as s:

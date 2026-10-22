@@ -92,3 +92,35 @@ CREATE TABLE IF NOT EXISTS security_events (
     at         timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS security_events_user ON security_events (user_id, at DESC);
+
+-- "Send to" targets (MeTube, JDownloader, webhook, Discord, ntfy, plug-ins).
+-- config_enc: JSON of the target's fields, bound to (user, row id).
+CREATE TABLE IF NOT EXISTS user_targets (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    kind        text NOT NULL,
+    name_enc    bytea,
+    config_enc  bytea NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_targets_user ON user_targets (user_id);
+
+-- Saved-search alerts, checked in the background; notify through a target.
+CREATE TABLE IF NOT EXISTS alerts (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+    target_id   uuid REFERENCES user_targets ON DELETE SET NULL,
+    data_enc    bytea NOT NULL,                -- {name, params}
+    seen_enc    bytea,                         -- video keys already reported
+    last_run    timestamptz,
+    last_new    integer NOT NULL DEFAULT 0,
+    last_error  text,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS alerts_user ON alerts (user_id);
+
+-- Settings the admin changes at runtime (override the environment).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   text PRIMARY KEY,
+    value text NOT NULL
+);

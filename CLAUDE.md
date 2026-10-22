@@ -135,16 +135,31 @@ proxy host id **28**, no access list; the old list id **2** "Aggregator" still e
   from `index.html` as `"/static/name"` and they're versioned automatically.
 - `sw.js` loads the page network-first (cache only offline); bump `CACHE` when changing `sw.js` itself.
 
-## MeTube per user — added 2026-10-22
+## Send to, feed, library, alerts, admin, plug-ins — added 2026-10-22
 
-- Optional per account, edited in Account → Profile (`metubeCard` / `sendToMeTube` in `static/auth.js`).
-  Backend `aggregator/auth/metube.py`: `GET/PUT/DELETE /api/me/metube`, `POST /api/metube/add`. Stored as
-  `users.metube_enc` (`{url, username, password}`, AES-GCM, added with `ALTER TABLE … IF NOT EXISTS`);
-  `/api/me` returns `metube: bool`, which sets `body.has-metube` and so shows the cards' `.dl-btn`.
-- The server relays to MeTube (`POST <url>/add`, MeTube ≥ 2026 API: `download_type`, `codec`, `format`,
-  `quality`; save checks `GET <url>/version`). SSRF fence: redirects off, connection pinned to the
-  resolved IP (CurlOpt.RESOLVE), non-public IPs refused unless in `METUBE_PRIVATE_HOSTS` (unset here —
-  the owner's MeTube is used via its public URL `https://metube.selfhosted.vip`, NPM host 27, access
-  list 1 basic auth), only video URLs of the 12 sites. Changing the address/username drops the saved password.
-- Tested on 2026-10-22 against the local MeTube with `METUBE_PRIVATE_HOSTS` set temporarily (then removed);
-  the test entry and file were deleted from MeTube and the throwaway account deleted.
+- **Targets** (`aggregator/targets/`: metube, jdownloader, webhook, discord, ntfy; same shape for plug-ins).
+  Per-user rows in `user_targets` (config sealed per row, AAD `user_targets.config:<uid>:<id>`); routes in
+  `aggregator/auth/send.py`. The first MeTube version's `users.metube_enc` is migrated on start-up
+  (`migrate_metube`); the owner's MeTube moved over that way. `/api/me` returns `targets` and `is_admin`;
+  `body.has-targets` shows the Download buttons. All outgoing calls go through `aggregator/net.py`
+  `guarded_request` (public IPs only unless `SEND_PRIVATE_HOSTS`, pinned IP, no redirects). Unset here:
+  the owner's MeTube is used via `https://metube.selfhosted.vip` (NPM host 27, access list 1 basic auth).
+- **Search core** moved to `aggregator/searching.py` (page cache + `health.record` for the admin page).
+  `Query.sort = "new"`: adapters with `SORTS = {"new"}` (pornhub API `ordering=newest` / HTML `o=mr`,
+  xvideos `sort=uploaddate`, xhamster `sort=newest`, porntrex `sort_by=post_date`, redtube
+  `ordering=newest`, eporner `order=latest`, youporn `/search/date/`). Tube8, SpankBang, XNXX, YouJizz,
+  HQPorner had no working newest-first parameter (probed 2026-10-22).
+- **Feed** `aggregator/feed.py`: shared per-name cache in `/data/aggregator-feed-v1.json`, one name at a time
+  with a 2 s pause (Pornhub throttling); first lookup of a name marks videos `first_seen = 0` (not "new").
+- **Alerts** `aggregator/auth/alerts.py`: table `alerts`, loop every 15 min, runs due ones (`ALERT_HOURS`);
+  first run only records; notifies via a target's `notify()`; link = `PUBLIC_URL/?actor=…&sort=new`.
+- **Admin** `aggregator/auth/admin.py`: `ADMIN_EMAILS` (set to the owner's account email in `.env`),
+  registration switch stored in `app_settings`, users, site health, directory rebuild (`directory.rebuild_now`).
+- **Plug-ins** `aggregator/plugins.py` loads `/plugins/{sources,targets}/*.py` at start-up (compose mounts
+  `./plugins`, gitignored; templates in `plugins-example/`).
+- **Client**: `static/library.js` (Watch later, watched, sent + MeTube progress, select mode/bulk bar, saved
+  searches, feed view) shares app.js's globals; app.js `init()` runs on DOMContentLoaded so library.js is
+  loaded first. Settings blob now also holds favoriteChannels, later, watched, sent, saved, feedSeenAt,
+  blockPerformers/Tags, hideWatched, mergeDups (`SETTINGS_MAX` 1 MB). The URL mirrors the current search.
+- Tested 2026-10-22 with a throwaway admin account and a local fake receiver (webhook/ntfy/JDownloader)
+  plus a test source plug-in and a broken one; all removed afterwards (1 user, 1 target, 0 alerts left).

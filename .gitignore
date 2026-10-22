@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 certs/
 !.env.example
+
+# your own plug-ins (templates live in plugins-example/)
+plugins/

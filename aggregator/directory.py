@@ -42,6 +42,10 @@ CONCURRENCY = 4
 # first, XVideos' video stills next, Pornhub's grey silhouette last.
 THUMB_PREF = {"xhamster": 0, "pornhub": 1, "xvideos": 2, "placeholder": 3}
 
+# For the admin page: what the last build did; rebuild_now() starts one early.
+status = {"building": False, "last_build": 0.0, "last_errors": [], "seconds": 0.0}
+_wake: asyncio.Event | None = None
+
 PH = "https://www.pornhub.com"
 XH = "https://xhamster.com"
 XV = "https://www.xvideos.com"
@@ -284,6 +288,7 @@ async def _build() -> bool:
         pornhub(), _xh_stars(p_book), _xv_stars(p_book), _xh_channels(c_book),
         return_exceptions=True,
     )
+    status["last_errors"] = [f"{type(r).__name__}: {r}"[:300] for r in results if isinstance(r, BaseException)]
     for r in results:
         if isinstance(r, BaseException):
             log.warning("directory: list failed: %s: %s", type(r).__name__, r)
@@ -295,6 +300,7 @@ async def _build() -> bool:
             d.load([{**e.__dict__} for e in book.values()], now)
         else:
             log.warning("directory: kept the previous %s list (%d entries, new build had %d)", d.kind, len(d.entries), len(book))
+    status["last_build"], status["seconds"] = now, now - started
     log.warning("directory: %d performers, %d channels in %.0fs",
                 len(performers.entries), len(channels.entries), now - started)
     try:
@@ -317,13 +323,31 @@ def _load_cache() -> None:
         pass
 
 
+def rebuild_now() -> bool:
+    """Start a rebuild without waiting for the daily timer (admin page). False if one is running."""
+    if status["building"] or _wake is None:
+        return False
+    _wake.set()
+    return True
+
+
 async def keep_fresh() -> None:
     """Background task: load the cached copy, then rebuild whenever it is a day old."""
+    global _wake
+    _wake = asyncio.Event()
     _load_cache()
     while True:
         age = time.time() - min(performers.built, channels.built)
         wait = REFRESH_EVERY - age
-        if age >= REFRESH_EVERY or not performers.entries or not channels.entries:
-            ok = await _build()
+        if _wake.is_set() or age >= REFRESH_EVERY or not performers.entries or not channels.entries:
+            _wake.clear()
+            status["building"] = True
+            try:
+                ok = await _build()
+            finally:
+                status["building"] = False
             wait = REFRESH_EVERY if ok else 3600
-        await asyncio.sleep(max(60, wait))
+        try:
+            await asyncio.wait_for(_wake.wait(), timeout=max(60, wait))
+        except asyncio.TimeoutError:
+            pass

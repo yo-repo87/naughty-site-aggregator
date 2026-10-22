@@ -22,6 +22,7 @@ class Query:
     min_sec: int = 0
     max_sec: int | None = None  # None = no upper bound
     page: int = 1               # 1-based
+    sort: str = ""              # "" = the site's own relevance, "new" = newest first (sites listing it in SORTS)
 
 
 @dataclass

@@ -35,7 +35,7 @@ CSP = "; ".join([
 ])
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 UNSAFE = ("POST", "PUT", "PATCH", "DELETE")
-LOGIN_GATED = ("/api/search", "/api/thumb", "/api/suggest")
+LOGIN_GATED = ("/api/search", "/api/thumb", "/api/suggest", "/api/feed")
 
 
 class Hardening(BaseHTTPMiddleware):
